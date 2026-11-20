@@ -1,5 +1,5 @@
 // 파일을 수정해서 다시 올릴 때는 아래 VERSION 값을 바꿔 주세요. 그래야 설치된 앱이 새 버전을 받습니다.
-const VERSION = 'v2-b4d8b842';
+const VERSION = 'v3-48a2a3fd';
 const CACHE = 'planet-sim-' + VERSION;
 const FILES = ['./', 'index.html', 'three.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];

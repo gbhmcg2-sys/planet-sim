@@ -1575,9 +1575,30 @@ requestAnimationFrame(frame);
 </script>
 <script>
 // 설치형 앱(PWA): 오프라인에서도 열리도록 파일을 기기에 저장한다
-if('serviceWorker' in navigator && location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1'){
+if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1')){
   window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
+// "앱 설치" 버튼: 브라우저는 링크를 눌렀다고 자동으로 설치하지 않으므로, 설치할 수 있을 때 버튼을 보여 준다
+(function(){
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if(standalone) return;                                   // 이미 설치된 앱으로 실행 중
+  const hud=document.getElementById('hud'), toast=document.getElementById('toast');
+  const btn=document.createElement('button');
+  btn.type='button'; btn.id='btnInstall'; btn.textContent='앱 설치';
+  btn.style.cssText='pointer-events:auto;flex:none;min-height:0;padding:5px 14px;border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;display:none';
+  hud.appendChild(btn);
+  const tell=(t)=>{ toast.textContent=t; toast.classList.remove('off'); setTimeout(()=>toast.classList.add('off'), 9000); };
+  let deferred=null;
+  window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferred=e; btn.style.display=''; });   // 안드로이드·PC 크롬/엣지
+  window.addEventListener('appinstalled', ()=>{ btn.style.display='none'; tell('설치했어요! 홈 화면의 "행성 충돌" 아이콘으로 열 수 있어요.'); });
+  const ua=navigator.userAgent, ios=/iPhone|iPad|iPod/.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  if(ios) btn.style.display='';                            // 아이폰·아이패드는 직접 추가해야 해서 방법을 안내
+  btn.onclick=async()=>{
+    if(deferred){ deferred.prompt(); try{ await deferred.userChoice; }catch(e){} deferred=null; btn.style.display='none'; }
+    else if(ios) tell('사파리 아래쪽 공유 버튼(네모에 화살표)을 누른 뒤 "홈 화면에 추가"를 선택하세요.');
+    else tell('브라우저 메뉴에서 "앱 설치" 또는 "홈 화면에 추가"를 선택하세요.');
+  };
+})();
 </script>
 </body>
 </html>
