@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="행성·별·은하·블랙홀을 직접 움직여 충돌시키는 3D 우주 시뮬레이션">
+<meta name="theme-color" content="#05070d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="행성 충돌">
+<title>행성 충돌 시뮬레이션</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=Orbit&display=swap" rel="stylesheet">
+<style>
+/* 레이아웃: 화면 전체가 우주(캔버스), 위에 계기판, 오른쪽(모바일은 아래)에 조작 패널. 어두운 단일 테마. */
+:root{
+  color-scheme: dark;
+  --space:#05070d;
+  --panel:rgba(14,19,32,.86);
+  --line:rgba(150,175,220,.18);
+  --ink:#e8eefb;
+  --ink-dim:#93a1bd;
+  --accent:#ffb454;      /* 달아오른 암석의 주황 */
+  --accent-ink:#1a1206;
+  --cool:#7fd0ff;
+  --font-display:'Orbit','IBM Plex Sans KR',system-ui,sans-serif;
+  --font-body:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--space);color:var(--ink);font-family:var(--font-body);font-size:14px;overflow:hidden;-webkit-user-select:none;user-select:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas#c.grabbing{cursor:grabbing}
+
+#hud{position:fixed;top:12px;left:16px;right:16px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;z-index:2}
+#hud h1{font-family:var(--font-display);font-size:15px;font-weight:400;letter-spacing:.04em;margin:0 8px 0 0;align-self:center;color:var(--ink)}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-variant-numeric:tabular-nums;color:var(--ink-dim);white-space:nowrap}
+.chip b{color:var(--ink);font-weight:500}
+.chip.hot b{color:var(--accent)}
+
+#panel{position:fixed;top:56px;right:16px;width:272px;max-height:calc(100% - 110px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:14px;z-index:3;backdrop-filter:blur(8px)}
+#panel section{display:flex;flex-direction:column;gap:8px}
+#panel h2{font-size:11px;font-weight:500;color:var(--ink-dim);letter-spacing:.08em;margin:0}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;padding:8px 10px;cursor:pointer;flex:1 1 auto;min-height:36px}
+button:hover{background:rgba(255,255,255,.12)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--cool);outline-offset:2px}
+button[aria-pressed="true"]{background:rgba(127,208,255,.18);border-color:var(--cool);color:#fff}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;flex:2 1 auto}
+button.primary:hover{filter:brightness(1.08)}
+button:disabled{opacity:.4;cursor:default}
+.speed button{padding:6px 0;min-height:32px;flex:1 1 0;font-variant-numeric:tabular-nums}
+label.slider{display:grid;grid-template-columns:38px 1fr 44px;align-items:center;gap:8px;color:var(--ink-dim)}
+label.slider output{color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+#selName{display:flex;align-items:center;gap:8px;font-weight:500}
+#selDot{width:12px;height:12px;border-radius:50%;background:#888;flex:none}
+#selEmpty{color:var(--ink-dim);line-height:1.5}
+#selBox{display:flex;flex-direction:column;gap:8px}
+#selBox[hidden],#selEmpty[hidden]{display:none}
+#toggle{display:none}
+#missions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.mission{display:flex;gap:8px;align-items:center;text-align:left;width:100%;padding:5px 10px;min-height:32px;color:var(--ink-dim)}
+.mission .mk{color:var(--ink-dim);flex:none}
+.mission.ok{border-color:var(--accent);color:var(--ink)}
+.mission.ok .mk{color:var(--accent)}
+#missionCount{color:var(--accent);margin-left:4px}
+#btnClearStamps{min-height:28px;padding:4px 10px;font-size:12px;color:var(--ink-dim);align-self:flex-end;flex:none}
+
+#hint{position:fixed;left:16px;right:16px;bottom:12px;text-align:center;color:var(--ink-dim);font-size:12.5px;pointer-events:none;z-index:2;text-shadow:0 1px 4px #000}
+#toast{position:fixed;left:50%;top:22%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--accent);color:var(--ink);border-radius:12px;padding:10px 16px;font-size:15px;pointer-events:none;z-index:2;width:max-content;max-width:calc(100% - 32px);text-align:center;transition:opacity .4s}
+#toast.off{opacity:0}
+#fail{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;z-index:9;background:var(--space)}
+#fail[hidden]{display:none}
+
+@media (max-width:720px){
+  #hud h1{display:none}
+  #panel{top:auto;right:8px;left:8px;bottom:8px;width:auto;max-height:62%;padding:10px;gap:10px;border-radius:14px}
+  #panel.collapsed section.more{display:none}
+  #toggle{display:block;flex:0 0 auto}
+  #hint{bottom:auto;top:84px;font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="행성 충돌 시뮬레이션 화면"></canvas>
+
+<div id="hud">
+  <h1>행성 충돌 시뮬레이션</h1>
+  <div class="chip">경과 <b id="hTime">0.0초</b></div>
+  <div class="chip hot">충돌 속도 <b id="hSpeed">-</b></div>
+  <div class="chip">파편 <b id="hFrag">0개</b></div>
+</div>
+
+<aside id="panel" class="collapsed" aria-label="조작 패널">
+  <section>
+    <div class="row">
+      <button id="btnRun" class="primary" type="button">발사 ▶</button>
+      <button id="btnReset" type="button">처음으로</button>
+      <button id="toggle" type="button" aria-expanded="false">설정</button>
+    </div>
+    <div class="row" role="group" aria-label="끌기 동작">
+      <button id="modeAim" type="button" aria-pressed="true">방향 지시</button>
+      <button id="modeMove" type="button" aria-pressed="false">위치 이동</button>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>미션 도장 <span id="missionCount"></span></h2>
+    <ul id="missions"></ul>
+    <button type="button" id="btnClearStamps">도장 지우기</button>
+  </section>
+
+  <section class="more">
+    <h2>천체 추가 (최대 6개)</h2>
+    <div class="row" id="addRow">
+      <button type="button" data-add="rock">암석 행성</button>
+      <button type="button" data-add="gas">가스 행성</button>
+      <button type="button" data-add="star">별</button>
+      <button type="button" data-add="galaxy">은하</button>
+      <button type="button" data-add="hole">블랙홀</button>
+      <button type="button" data-add="comet">혜성</button>
+      <button type="button" id="btnBelt">소행성대</button>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>선택한 천체</h2>
+    <div id="selEmpty">천체를 누르면 여기서 크기와 질량을 바꿀 수 있습니다.</div>
+    <div id="selBox" hidden>
+      <div id="selName"><span id="selDot"></span><span id="selText"></span></div>
+      <label class="slider" id="lblSize" for="rngSize">크기 <input id="rngSize" type="range" min="0.6" max="4.5" step="0.1"><output id="outSize"></output></label>
+      <label class="slider" for="rngMass">질량 <input id="rngMass" type="range" min="0.5" max="120" step="0.5"><output id="outMass"></output></label>
+      <div class="row">
+        <button id="btnStop" type="button">속도 0으로</button>
+        <button id="btnDel" type="button">삭제</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>중력 세기</h2>
+    <div class="row speed" id="gravRow" role="group" aria-label="중력 세기">
+      <button type="button" data-g="0.4" aria-pressed="false">약하게</button>
+      <button type="button" data-g="1" aria-pressed="true">보통</button>
+      <button type="button" data-g="2.5" aria-pressed="false">세게</button>
+      <button type="button" data-g="5" aria-pressed="false">최대</button>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>재생 속도</h2>
+    <div class="row speed" id="speedRow" role="group" aria-label="재생 속도">
+      <button type="button" data-s="0.25" aria-pressed="false">¼배</button>
+      <button type="button" data-s="0.5" aria-pressed="false">½배</button>
+      <button type="button" data-s="1" aria-pressed="true">1배</button>
+      <button type="button" data-s="2" aria-pressed="false">2배</button>
+      <button type="button" data-s="4" aria-pressed="false">4배</button>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>프리셋</h2>
+    <div class="row">
+      <button type="button" data-preset="headon">정면 충돌</button>
+      <button type="button" data-preset="graze">스치는 충돌</button>
+      <button type="button" data-preset="moon">달 탄생</button>
+      <button type="button" data-preset="solar">태양계</button>
+      <button type="button" data-preset="galaxy">은하 충돌</button>
+      <button type="button" data-preset="hole">블랙홀</button>
+      <button type="button" data-preset="tde">별을 찢는 블랙홀</button>
+      <button type="button" data-preset="ring">은하 정면 충돌</button>
+      <button type="button" data-preset="bh2">블랙홀 충돌</button>
+    </div>
+  </section>
+
+  <section class="more">
+    <h2>카메라 · 소리</h2>
+    <div class="row">
+      <button id="btnFollow" type="button" aria-pressed="true">충돌 따라가기</button>
+      <button id="btnSound" type="button" aria-pressed="true">소리</button>
+      <button id="btnZoomIn" type="button" aria-label="확대">＋</button>
+      <button id="btnZoomOut" type="button" aria-label="축소">－</button>
+    </div>
+  </section>
+</aside>
+
+<div id="toast">천체를 끌어서 방향을 정해 보세요</div>
+<div id="hint"></div>
+<div id="fail" hidden>3D 엔진(Three.js)을 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로 고침해 주세요.</div>
+
+<script src="three.min.js"></script>
+<script>
+(function(){
+'use strict';
+if(!window.THREE){ document.getElementById('fail').hidden=false; return; }
+
+/* ============================================================
+   설정값 — 여기만 바꿔도 시뮬레이션 성격이 달라집니다
+   ============================================================ */
+const LOW = matchMedia('(pointer:coarse)').matches || innerWidth < 720;   // 모바일이면 가볍게
+const CONFIG = {
+  G: 1,                    // 중력 상수 (패널의 "중력 세기"로 바뀜)
+  DT: 1/120,               // 고정 시간 간격(시뮬레이션 초)
+  MAX_STEPS_PER_FRAME: 12, // 한 화면당 최대 계산 횟수
+  MAX_PLANETS: 6,          // 사용자가 놓을 수 있는 천체 수
+  MAX_FRAGMENTS: LOW ? 240 : 460,  // 파편 총 개수 상한
+  MAX_DUST: LOW ? 7000 : 18000,     // 먼지·가스 입자 상한
+  GALAXY_STARS: LOW ? 380 : 800,   // 은하 하나를 이루는 별 개수
+  GS_SOFT: 0.5,            // 은하 별에 쓰는 중력 소프트닝²
+  SHATTER_K: 3,            // 부서지기 어려운 정도(중력 결합 에너지 배수) — 클수록 단단함
+  STRENGTH: 0.35,          // 작은 파편의 재료 강도 — 클수록 파편끼리 덜 부서짐
+  RESTITUTION: 0.3,        // 파편끼리 튕기는 정도(0~1)
+  MIN_FRAG_R: 0.07,        // 이보다 작은 조각은 먼지로 처리
+  HEAT_COOL: 0.22,         // 식는 속도(1/초)
+  IMMUNE: 0.6,             // 갓 생긴 파편이 서로 충돌 판정을 건너뛰는 시간(초)
+  ARROW_LEN: 1.2,          // 화살표 길이 1.2 = 속도 1
+  MAX_SPEED: 9,            // 지시할 수 있는 최대 속도
+  PREVIEW_STEPS: 320,      // 예상 궤적 길이(점 개수)
+  PREVIEW_DT: 1/40
+};
+
+/* 천체 종류와 색 — 이름·색을 바꾸거나 항목을 늘릴 수 있습니다 */
+const KINDS = {
+  rock: {label:'암석 행성', r:1.5, dens:1, s2:0.02, pals:[
+    {name:'지구',   a:0x2a62b0, b:0x4fae7a, crust:0x4a86c0, core:0x8c4a2a, ui:'#5aa2e6'},
+    {name:'화성',   a:0xa8492a, b:0xd99a5b, crust:0xb8623c, core:0x7d5a2c, ui:'#e0764a'},
+    {name:'금성',   a:0xc9a66b, b:0x86683f, crust:0xb89a66, core:0x8a3f26, ui:'#d9b877'},
+    {name:'얼음 행성', a:0x8cc6dd, b:0xe8f4f8, crust:0xa9d4e2, core:0x6b5a52, ui:'#9fdcf0'},
+    {name:'보라 행성', a:0x6a4fb0, b:0xc48ad6, crust:0x8a6cc4, core:0x8c5230, ui:'#b08ae6'}]},
+  gas: {label:'가스 행성', r:2.6, dens:0.3, s2:0.02, pals:[
+    {name:'목성',   a:0xc98f5a, b:0xf0dcc0, crust:0xd9a878, core:0x6e4a35, ui:'#e8b07a'},
+    {name:'토성',   a:0xd8c08a, b:0xf3e6c4, crust:0xe2cf9c, core:0x7a6040, ui:'#eed9a0', ring:true},
+    {name:'해왕성', a:0x2f55c8, b:0x7fb0ff, crust:0x4f7fe0, core:0x4a5a7a, ui:'#6f9cff'}]},
+  star: {label:'별', r:3, dens:1.5, s2:0.02, pals:[
+    {name:'태양',     a:0xffb020, b:0xfff0a0, crust:0xffc040, core:0xffe080, ui:'#ffcf5a'},
+    {name:'푸른 별',  a:0x7fb8ff, b:0xeaf4ff, crust:0x9fcaff, core:0xd0e6ff, ui:'#a8d0ff'},
+    {name:'붉은 별',  a:0xe04a20, b:0xffa060, crust:0xf06a30, core:0xffb080, ui:'#ff8a50'}]},
+  galaxy: {label:'은하', r:0.9, m:45, s2:0.5, disc:7, pickR:3.2, pals:[
+    {name:'푸른 나선 은하', a:0xfff0c8, b:0x6fa8ff, crust:0xfff0c8, core:0xfff0c8, ui:'#9cc4ff'},
+    {name:'금빛 나선 은하', a:0xffffff, b:0xffb060, crust:0xffffff, core:0xffffff, ui:'#ffc88a'},
+    {name:'분홍 나선 은하', a:0xfff4e0, b:0xff7fc0, crust:0xfff4e0, core:0xfff4e0, ui:'#ff9fd0'}]},
+  hole: {label:'블랙홀', r:1, m:80, s2:0.05, pickR:1.8, pals:[
+    {name:'블랙홀', a:0x000000, b:0xff9a3c, crust:0xff9a3c, core:0xff9a3c, ui:'#c79bff'}]},
+  comet: {label:'혜성', r:0.45, m:0.15, s2:0.02, pickR:1.1, pals:[
+    {name:'얼음 혜성', a:0xbfe8ff, b:0xffffff, crust:0xcfeeff, core:0x8fa8b8, ui:'#bfe8ff'},
+    {name:'초록 혜성', a:0xa8f0c8, b:0xffffff, crust:0xbff5d6, core:0x7fa890, ui:'#a8f0c8'}]}
+};
+
+/* 미션 — 제목(t)과 힌트(h)를 바꾸거나 늘릴 수 있습니다. 달성 조건은 achieve('id')를 부르는 곳에 있습니다 */
+const FRAG_GOAL = LOW ? 200 : 300;
+const MISSIONS = [
+  {id:'first', t:'첫 충돌 일으키기', h:'두 행성을 서로를 향해 발사해 보세요.'},
+  {id:'smash', t:'산산조각 내기', h:'탈출속도의 2배보다 빠르게 부딪히게 하세요. 화살표를 길게 끌면 빨라져요.'},
+  {id:'frag',  t:'파편 '+FRAG_GOAL+'개 넘기기', h:'큰 행성 두 개를 아주 빠르게 정면으로 부딪혀 보세요.'},
+  {id:'gas',   t:'가스 행성 터뜨리기', h:'가스 행성을 추가해서 다른 천체와 부딪혀 보세요.'},
+  {id:'orbit', t:'별 주위를 한 바퀴 돌기', h:'별 옆에 행성을 놓고 옆 방향으로 밀어 보세요. 태양계 프리셋을 참고하세요.'},
+  {id:'comet', t:'혜성을 별 가까이 보내기', h:'혜성을 별 쪽으로 보내 보세요. 꼬리가 별 반대쪽으로 뻗어요.'},
+  {id:'tail',  t:'은하 꼬리 만들기', h:'은하 두 개가 가까이 스쳐 지나가게 해 보세요.'},
+  {id:'hole',  t:'블랙홀에게 먹이 주기', h:'블랙홀을 놓고 행성을 그쪽으로 발사해 보세요.'},
+  {id:'tde',   t:'블랙홀로 별 찢기', h:'별을 블랙홀 바로 옆으로 스치게 보내 보세요. 국수처럼 늘어나요.'},
+  {id:'gw',    t:'중력파 만들기', h:'블랙홀 두 개를 가까이 놓고 서로 돌게 해 보세요. "블랙홀 충돌" 프리셋을 참고하세요.'}
+];
+const pal = b => KINDS[b.type].pals[b.pal % KINDS[b.type].pals.length];
+
+function buildPreset(name){
+  const G=CONFIG.G, orb=(M,d)=>Math.sqrt(G*M/d);
+  switch(name){
+    case 'headon': return {list:[{type:'rock',x:-10,z:0,vx:3.6,vz:0,r:2,m:8,pal:0},{type:'rock',x:10,z:0,vx:-3.6,vz:0,r:2,m:8,pal:1}]};
+    case 'graze':  return {list:[{type:'rock',x:-10,z:-1.9,vx:3.2,vz:0,r:2,m:8,pal:0},{type:'rock',x:10,z:1.9,vx:-3.2,vz:0,r:2,m:8,pal:2}]};
+    case 'moon':   return {list:[{type:'rock',x:0,z:0,vx:0,vz:0,r:2.6,m:17.6,pal:0},{type:'rock',x:-11,z:-3.8,vx:3.0,vz:0,r:1.4,m:2.8,pal:1}]};
+    case 'solar':  return {cam:62, list:[
+      {type:'star',x:0,z:0,vx:0,vz:0,r:3,m:40,pal:0},
+      {type:'rock',x:8,z:0,vx:0,vz:orb(40,8),r:0.9,m:0.8,pal:1},
+      {type:'rock',x:-13,z:0,vx:0,vz:-orb(40,13),r:1.2,m:1.7,pal:0},
+      {type:'gas',x:0,z:20,vx:-orb(40,20),vz:0,r:2.3,m:3.6,pal:0},
+      {type:'gas',x:0,z:-28,vx:orb(40,28),vz:0,r:2,m:2.4,pal:1}]};
+    case 'galaxy': return {cam:74, list:[
+      {type:'galaxy',x:-17,z:-5,vx:1.25,vz:0,r:0.9,m:45,pal:0},
+      {type:'galaxy',x:17,z:5,vx:-1.25,vz:0,r:0.9,m:45,pal:1}]};
+    case 'hole': return {cam:66, belt:true, list:[
+      {type:'hole',x:0,z:0,vx:0,vz:0,r:1,m:80,pal:0},
+      {type:'rock',x:10,z:0,vx:0,vz:orb(80,10),r:1.1,m:1.3,pal:0},
+      {type:'gas',x:-16,z:0,vx:0,vz:-orb(80,16)*0.45,r:2.3,m:3.6,pal:2},
+      {type:'star',x:0,z:26,vx:-orb(80,26),vz:0,r:2.2,m:16,pal:2},
+      {type:'comet',x:0,z:-32,vx:orb(80,32)*0.5,vz:0,r:0.45,m:0.15,pal:0}]};
+    // 블랙홀이 별을 찢는다(조석 파괴)
+    case 'tde': return {cam:40, list:[
+      {type:'hole',x:0,z:0,vx:0,vz:0,r:1,m:80,pal:0},
+      {type:'star',x:-22,z:-7,vx:Math.sqrt(2*G*80/23.1),vz:0,r:2,m:14,pal:0}]};
+    // 두 은하가 원반을 마주 보고 정면으로 통과 → 고리 → 다시 만나 하나로
+    case 'ring': return {cam:58, theta:0.8, list:[
+      {type:'galaxy',x:-13,z:0,vx:0.9,vz:0,r:0.9,m:45,pal:0,face:true},
+      {type:'galaxy',x:13,z:0,vx:-0.9,vz:0,r:0.9,m:45,pal:2,face:true}]};
+    // 블랙홀 두 개가 서로 돌다가 합쳐지며 중력파를 낸다
+    case 'bh2': { const v=Math.sqrt(G*80/22); return {cam:44, list:[
+      {type:'hole',x:-5.5,z:0,vx:0,vz:v,r:1,m:80,pal:0},
+      {type:'hole',x:5.5,z:0,vx:0,vz:-v,r:1,m:80,pal:0}]}; }
+    default: return {list:[{type:'rock',x:-7,z:0,vx:0,vz:0,r:2,m:8,pal:0},{type:'rock',x:7,z:0,vx:0,vz:0,r:2,m:8,pal:1}]};
+  }
+}
+
+/* ============================================================
+   장면
+   ============================================================ */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070d);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 3000);
+const cam = {theta: Math.PI/2, phi: 0.92, dist: 36, target: new THREE.Vector3(), shake: 0};
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+scene.add(new THREE.AmbientLight(0x8fa6d6, 0.42));
+const sun = new THREE.DirectionalLight(0xfff2de, 1.1); sun.position.set(30, 40, 22); scene.add(sun);
+const rim = new THREE.DirectionalLight(0x4a78ff, 0.35); rim.position.set(-30, -10, -25); scene.add(rim);
+const flashLight = new THREE.PointLight(0xffb060, 0, 80, 2); scene.add(flashLight);
+
+// 궤도 평면 격자 (멈춰 있을 때만 보임)
+const grid = new THREE.PolarGridHelper(60, 12, 10, 96, 0x35507f, 0x22324f);
+grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthWrite = false;
+scene.add(grid);
+
+function makeTex(ring){
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const g=c.getContext('2d'), gr=g.createRadialGradient(64,64,0,64,64,64);
+  if(ring){
+    gr.addColorStop(0,'rgba(255,255,255,0)'); gr.addColorStop(.68,'rgba(255,200,140,0)');
+    gr.addColorStop(.84,'rgba(255,225,190,.9)'); gr.addColorStop(1,'rgba(255,150,70,0)');
+  }else{
+    gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(.22,'rgba(255,255,255,.8)');
+    gr.addColorStop(.55,'rgba(255,255,255,.25)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+  }
+  g.fillStyle=gr; g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+const TEX_GLOW = makeTex(false), TEX_RING = makeTex(true);
+
+// 배경 별 — 색과 크기가 다른 여러 겹 + 은하수 띠. 큰 별은 반짝인다.
+const STAR_COLORS = [[.6,.74,1],[.8,.88,1],[1,1,1],[1,1,1],[1,.96,.8],[1,.85,.55],[1,.66,.42],[1,.46,.38],[.75,1,.9],[.95,.7,1]];
+const bgTwinkle = [];
+(function(){
+  const R=900;
+  function layer(n, size, bmin, bmax, glow, band){
+    const pos=new Float32Array(n*3), col=new Float32Array(n*3);
+    for(let i=0;i<n;i++){
+      const t=Math.random()*Math.PI*2;
+      const u = band ? (Math.random()+Math.random()+Math.random()-1.5)*0.16 : Math.random()*2-1, s=Math.sqrt(1-u*u);
+      let x=R*s*Math.cos(t), y=R*u, z=R*s*Math.sin(t);
+      if(band){ const c=Math.cos(1.0), sn=Math.sin(1.0), y2=y*c-z*sn, z2=y*sn+z*c; y=y2; z=z2; }   // 띠를 기울임
+      pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+      const c=STAR_COLORS[(Math.random()*STAR_COLORS.length)|0], b=bmin+Math.random()*(bmax-bmin);
+      col[i*3]=c[0]*b; col[i*3+1]=c[1]*b; col[i*3+2]=c[2]*b;
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    g.setAttribute('color', new THREE.BufferAttribute(col,3));
+    const m=new THREE.PointsMaterial({size, sizeAttenuation:false, vertexColors:true, transparent:true, depthWrite:false,
+      map:glow?TEX_GLOW:null, blending:glow?THREE.AdditiveBlending:THREE.NormalBlending});
+    scene.add(new THREE.Points(g,m));
+    return m;
+  }
+  layer(2600, 1.2, .12, .4, false, true);     // 은하수 띠
+  layer(2400, 1.3, .3, .8, false);            // 아주 작은 별
+  layer(1100, 2.4, .6, 1, false);             // 작은 별
+  bgTwinkle.push({m:layer(420, 8, 1.2, 1.8, true),  w:1.7, p:0});     // 중간 별
+  bgTwinkle.push({m:layer(150, 14, 1.4, 2, true),  w:1.1, p:2});     // 큰 별
+  bgTwinkle.push({m:layer(40,  24, 1.6, 2.2, true), w:.7,  p:4});     // 아주 밝은 별
+})();
+
+/* ============================================================
+   상태
+   ============================================================ */
+const state = {running:false, launched:false, speed:1, mode:'aim', follow:true, time:0, sound:true,
+               lastImpact:null, selected:null, setup:null, camBase:36, aimed:false, previewDirty:true};
+let bodies = [];
+let nextId = 1, groupSeq = 0, acc = 0, stepCount = 0, heavy = [];
+const hits = [];
+const rand = (a,b)=>a+Math.random()*(b-a);
+const clamp = (v,a,b)=>v<a?a:(v>b?b:v);
+const $=id=>document.getElementById(id);
+
+/* 한 줄 해설(화면 위쪽 말풍선) */
+let sayTimer=0;
+function say(text, ms){
+  const t=$('toast'); t.textContent=text; t.classList.remove('off');
+  clearTimeout(sayTimer); if(ms) sayTimer=setTimeout(()=>t.classList.add('off'), ms);
+}
+function hush(){ clearTimeout(sayTimer); $('toast').classList.add('off'); }
+
+/* 미션 도장 (이 브라우저에만 저장) */
+const done=new Set();
+try{ JSON.parse(localStorage.getItem('planetsim.missions')||'[]').forEach(x=>done.add(x)); }catch(e){}
+function renderMissions(){
+  const ul=$('missions'); ul.textContent='';
+  MISSIONS.forEach(m=>{
+    const li=document.createElement('li'), b=document.createElement('button'), mk=document.createElement('span'), tx=document.createElement('span');
+    b.type='button'; b.className='mission'+(done.has(m.id)?' ok':'');
+    mk.className='mk'; mk.textContent=done.has(m.id)?'★':'☆'; tx.textContent=m.t;
+    b.setAttribute('aria-label', m.t+(done.has(m.id)?' (성공)':' (아직)'));
+    b.onclick=()=>say('힌트: '+m.h, 7000);
+    b.append(mk,tx); li.append(b); ul.append(li);
+  });
+  $('missionCount').textContent=MISSIONS.filter(m=>done.has(m.id)).length+'/'+MISSIONS.length;
+}
+function achieve(id){
+  if(done.has(id)) return;
+  done.add(id);
+  try{ localStorage.setItem('planetsim.missions', JSON.stringify([...done])); }catch(e){}
+  renderMissions();
+  const m=MISSIONS.find(x=>x.id===id), all=MISSIONS.every(x=>done.has(x.id));
+  setTimeout(()=>{ say(all ? '모든 미션 성공! 이제 우주 박사예요 ★' : '미션 성공! ★ '+m.t, 5000); chime(); }, 2200);
+}
+function chime(){
+  if(!state.sound||!actx) return;
+  try{ const now=actx.currentTime;
+    [660,880,1320].forEach((f,i)=>{ const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(.0001,now+i*.12); g.gain.exponentialRampToValueAtTime(.22,now+i*.12+.02); g.gain.exponentialRampToValueAtTime(.0001,now+i*.12+.35);
+      o.connect(g); g.connect(actx.destination); o.start(now+i*.12); o.stop(now+i*.12+.4); });
+  }catch(e){}
+}
+function watchMissions(){              // 궤도·근접 미션 확인
+  const ps=planets();
+  for(const p of ps){
+    if(p.type==='galaxy'){ for(const q of ps) if(q.type==='galaxy'&&q.id>p.id&&Math.hypot(q.x-p.x,q.z-p.z)<9) achieve('tail'); continue; }
+    if(p.type==='star'||p.type==='hole') continue;
+    let s=null, sd=Infinity;
+    for(const q of ps) if(q.type==='star'){ const d=Math.hypot(q.x-p.x,q.z-p.z); if(d<sd){ sd=d; s=q; } }
+    if(!s){ p.orbRef=0; continue; }
+    if(p.type==='comet' && sd<s.r+5) achieve('comet');
+    const ang=Math.atan2(p.z-s.z,p.x-s.x);
+    if(p.orbRef!==s.id){ p.orbRef=s.id; p.orbAcc=0; }
+    else{ let d=ang-p.orbPrev; if(d>Math.PI) d-=2*Math.PI; if(d<-Math.PI) d+=2*Math.PI; p.orbAcc+=d; if(Math.abs(p.orbAcc)>=2*Math.PI) achieve('orbit'); }
+    p.orbPrev=ang;
+  }
+}
+
+/* 효과음 (첫 클릭 뒤에만 재생 가능) */
+let actx=null, lastBoom=0;
+function ensureAudio(){
+  if(!state.sound||actx) return;
+  try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; }
+}
+function playChirp(){                       // 블랙홀이 합쳐질 때의 "삐융" 소리(주파수가 빠르게 올라감)
+  if(!state.sound||!actx) return;
+  try{ const now=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(40,now); o.frequency.exponentialRampToValueAtTime(440,now+.9);
+    g.gain.setValueAtTime(.0001,now); g.gain.exponentialRampToValueAtTime(.45,now+.8); g.gain.exponentialRampToValueAtTime(.0001,now+1.0);
+    o.connect(g); g.connect(actx.destination); o.start(now); o.stop(now+1.05);
+  }catch(e){}
+}
+function playBoom(s){
+  if(!state.sound||!actx) return;
+  try{
+    const now=actx.currentTime; if(now-lastBoom<0.15) return; lastBoom=now;
+    const dur=clamp(0.7+s*0.05,0.7,2.2), len=Math.floor(actx.sampleRate*dur);
+    const buf=actx.createBuffer(1,len,actx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.5);
+    const src=actx.createBufferSource(); src.buffer=buf;
+    const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=520;
+    const g=actx.createGain(); g.gain.value=clamp(.18+s*.02,.18,.7);
+    src.connect(lp); lp.connect(g); g.connect(actx.destination); src.start();
+    const o=actx.createOscillator(), og=actx.createGain();
+    o.frequency.setValueAtTime(95,now); o.frequency.exponentialRampToValueAtTime(28,now+.6);
+    og.gain.setValueAtTime(clamp(.25+s*.02,.25,.6),now); og.gain.exponentialRampToValueAtTime(.001,now+.7);
+    o.connect(og); og.connect(actx.destination); o.start(now); o.stop(now+.75);
+  }catch(e){}
+}
+
+/* ============================================================
+   파편 모양 — 매번 새로 만드는 불규칙한 암석들
+   ============================================================ */
+let rockPool = [];
+function rockGeometry(type){
+  let g, sx=1, sy=1, sz=1, jit=0.25;
+  switch(type){
+    case 0: g=new THREE.TetrahedronGeometry(1,0); sx=.7; sy=1.7; sz=.55; jit=.3; break;   // 날카로운 조각
+    case 1: g=new THREE.DodecahedronGeometry(1,0); sx=1.3; sy=.28; jit=.22; break;         // 납작한 판
+    case 2: g=new THREE.IcosahedronGeometry(1,0); sx=1.9; sy=.65; sz=.7; jit=.25; break;   // 길쭉한 덩어리
+    case 3: g=new THREE.IcosahedronGeometry(1,1); jit=.3; break;                           // 울퉁불퉁한 덩어리
+    case 4: g=new THREE.IcosahedronGeometry(1,2); jit=.09; break;                          // 둥근 덩어리
+    case 5: g=new THREE.OctahedronGeometry(1,0); sx=.42; sy=2.1; sz=.42; jit=.3; break;    // 가시 모양
+    default: g=new THREE.TetrahedronGeometry(1,1); sy=.5; sx=1.2; jit=.35;                 // 쐐기
+  }
+  const p=g.attributes.position, seen=new Map();
+  let mean=0;
+  for(let i=0;i<p.count;i++){
+    const x=p.getX(i), y=p.getY(i), z=p.getZ(i);
+    const key=Math.round(x*1000)+','+Math.round(y*1000)+','+Math.round(z*1000);
+    let k=seen.get(key);
+    if(k===undefined){ k=1+rand(-jit,jit); seen.set(key,k); }
+    const nx=x*k*sx, ny=y*k*sy, nz=z*k*sz;
+    p.setXYZ(i,nx,ny,nz); mean+=Math.sqrt(nx*nx+ny*ny+nz*nz);
+  }
+  mean/=p.count; g.scale(1/mean,1/mean,1/mean);
+  g.computeVertexNormals();
+  return g;
+}
+function rebuildRockPool(){
+  rockPool.forEach(g=>g.dispose());
+  rockPool=[];
+  for(let i=0;i<42;i++) rockPool.push(rockGeometry(i%7));
+}
+
+/* ============================================================
+   천체 만들기
+   ============================================================ */
+function noise3(x,y,z,s){
+  return Math.sin(x*2.1+s)*Math.sin(y*2.7+s*1.7)*Math.sin(z*2.3+s*.6)
+       + .5*Math.sin(x*5.3+s*2.1)*Math.sin(y*4.7+s)*Math.sin(z*6.1+s*1.3)
+       + .25*Math.sin(x*11+s)*Math.sin(y*12.3+s*3)*Math.sin(z*10.7+s*2);
+}
+function glowSprite(color, scale, opacity){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:TEX_GLOW, color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false}));
+  sp.scale.setScalar(scale); return sp;
+}
+function bodyMesh(type, palIdx){
+  const P=KINDS[type].pals[palIdx % KINDS[type].pals.length];
+  if(type==='galaxy'){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(1,20,14), new THREE.MeshBasicMaterial({color:P.a}));
+    m.add(glowSprite(P.a, 7, .9));
+    return m;
+  }
+  if(type==='hole'){                       // 검은 구 + 밝은 원반
+    const m=new THREE.Mesh(new THREE.SphereGeometry(1,32,20), new THREE.MeshBasicMaterial({color:0x000000}));
+    const mk=(r0,r1,color,op)=>{ const d=new THREE.Mesh(new THREE.RingGeometry(r0,r1,72), new THREE.MeshBasicMaterial({color, transparent:true, opacity:op, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false})); d.rotation.x=-Math.PI/2; m.add(d); };
+    mk(1.05,1.3,0xfff2d0,.95); mk(1.3,2.7,0xff9a3c,.6); mk(2.7,3.6,0xc0401a,.25);
+    m.add(glowSprite(0x8a5cff, 7, .3));
+    return m;
+  }
+  const g=new THREE.SphereGeometry(1, 48, 32), pos=g.attributes.position;
+  const col=new Float32Array(pos.count*3), ca=new THREE.Color(P.a), cb=new THREE.Color(P.b), c=new THREE.Color();
+  const seed=Math.random()*50;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+    let t, shade=1;
+    if(type==='gas'){                       // 가로 줄무늬
+      t=0.5+0.5*Math.sin(y*10+0.7*Math.sin(x*3+seed)+0.5*Math.sin(z*4+seed*2)+seed);
+      shade=0.9+0.1*Math.sin(y*31+seed);
+    }else if(type==='star'){                // 쌀알 무늬
+      t=clamp(0.5+0.6*noise3(x*2.2,y*2.2,z*2.2,seed),0,1);
+    }else{
+      const n=noise3(x,y,z,seed); t=clamp((n+0.25)/0.6,0,1); t=t*t*(3-2*t);
+      shade=0.86+0.14*Math.sin(x*17+seed)*Math.sin(z*15+y*9);
+    }
+    c.copy(ca).lerp(cb,t);
+    col[i*3]=c.r*shade; col[i*3+1]=c.g*shade; col[i*3+2]=c.b*shade;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  let m;
+  if(type==='star'){
+    m=new THREE.Mesh(g, new THREE.MeshBasicMaterial({vertexColors:true}));
+    m.add(glowSprite(P.ui, 4.8, .85));
+    m.add(new THREE.PointLight(P.ui, 1.3, 0));
+  }else{
+    m=new THREE.Mesh(g, new THREE.MeshStandardMaterial({vertexColors:true, roughness:type==='gas'?.7:.88, metalness:0, emissive:0x000000}));
+    m.add(new THREE.Mesh(new THREE.SphereGeometry(type==='gas'?1.1:1.07, 32, 20),
+      new THREE.MeshBasicMaterial({color:P.ui, transparent:true, opacity:type==='gas'?.2:.13, side:THREE.BackSide, blending:THREE.AdditiveBlending, depthWrite:false})));
+    if(P.ring){
+      const ring=new THREE.Mesh(new THREE.RingGeometry(1.35,2.15,72), new THREE.MeshBasicMaterial({color:P.b, transparent:true, opacity:.55, side:THREE.DoubleSide, depthWrite:false}));
+      ring.rotation.x=-Math.PI/2; m.add(ring);
+    }
+    if(type==='comet') m.add(glowSprite(P.ui, 3.4, .55));
+  }
+  return m;
+}
+function arrowGroup(color){
+  const grp=new THREE.Group();
+  const mat=new THREE.MeshBasicMaterial({color, depthTest:false, transparent:true, opacity:.95});
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,1,10), mat);
+  shaft.rotation.z=-Math.PI/2;
+  const head=new THREE.Mesh(new THREE.ConeGeometry(.3,.75,14), mat);
+  head.rotation.z=-Math.PI/2;
+  shaft.renderOrder=head.renderOrder=6;
+  grp.add(shaft, head); grp.userData={shaft, head, mat};
+  grp.visible=false; scene.add(grp);
+  return grp;
+}
+function newBody(o){
+  const b=Object.assign({id:nextId++, kind:'frag', type:'rock', x:0,y:0,z:0, vx:0,vy:0,vz:0, ax:0,ay:0,az:0, m:1, r:1, s2:0.02,
+    heat:0, alive:true, mesh:null, pal:0, group:0, immune:0, spin:0, ax3:null, sh:null, arrow:null, trail:null}, o);
+  bodies.push(b);
+  return b;
+}
+function addPlanet(s){
+  const K=KINDS[s.type];
+  const b=newBody({kind:'planet', type:s.type, x:s.x, y:0, z:s.z, vx:s.vx||0, vy:0, vz:s.vz||0, r:s.r, m:s.m, pal:s.pal, s2:K.s2,
+    spin:rand(.15,.4), ax3:(s.type==='rock' ? new THREE.Vector3(rand(-.3,.3),1,rand(-.3,.3)).normalize() : new THREE.Vector3(0,1,0))});
+  if(K.pickR) b.pickR=K.pickR;
+  b.mesh=bodyMesh(s.type, s.pal); b.mesh.scale.setScalar(b.r); b.mesh.position.set(b.x,0,b.z); scene.add(b.mesh);
+  const ui=pal(b).ui;
+  b.arrow=arrowGroup(ui);
+  const tg=new THREE.BufferGeometry();
+  tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CONFIG.PREVIEW_STEPS*3),3));
+  b.trail=new THREE.Line(tg, new THREE.LineDashedMaterial({color:ui, dashSize:.5, gapSize:.38, transparent:true, opacity:.85, depthWrite:false}));
+  b.trail.frustumCulled=false; b.trail.visible=false; scene.add(b.trail);
+  b.face=!!s.face;
+  if(s.type==='galaxy'){ b.spinDir = Math.random()<.5 ? 1 : -1; seedGalaxy(b); }
+  state.previewDirty=true;
+  return b;
+}
+function addFragment(o){
+  const b=newBody(o);
+  b.kind='frag';
+  b.spin=rand(.6,5); b.ax3=new THREE.Vector3(rand(-1,1),rand(-1,1),rand(-1,1)).normalize();
+  b.sh=new THREE.Vector3(rand(.8,1.25),rand(.8,1.25),rand(.8,1.25));
+  const P=pal(b), c=new THREE.Color(o.core?P.core:P.crust);
+  c.offsetHSL(rand(-.02,.02), rand(-.08,.05), rand(-.1,.08));
+  const mat=new THREE.MeshStandardMaterial({color:c, roughness:o.core?.6:.92, metalness:o.core?.45:0, flatShading:true, emissive:0x000000});
+  b.mesh=new THREE.Mesh(rockPool[(Math.random()*rockPool.length)|0], mat);
+  b.mesh.rotation.set(rand(0,6.28),rand(0,6.28),rand(0,6.28));
+  b.mesh.position.set(b.x,b.y,b.z);
+  b.mesh.scale.copy(b.sh).multiplyScalar(b.r);
+  scene.add(b.mesh);
+  return b;
+}
+function addAsteroid(s){
+  return addFragment({type:'rock', pal:2, x:s.x, y:s.y||0, z:s.z, vx:s.vx||0, vy:0, vz:s.vz||0, m:s.m, r:s.r, core:false, heat:0, belt:true});
+}
+function addBelt(c){                        // c 주위를 도는 소행성 띠
+  const n=Math.min(LOW?36:60, CONFIG.MAX_FRAGMENTS-fragCount()-60);
+  const cx=c?c.x:0, cz=c?c.z:0, base=c ? (c.type==='galaxy' ? KINDS.galaxy.disc+2 : (c.pickR||c.r)*1.6+4) : 8;
+  for(let i=0;i<n;i++){
+    const rho=base+rand(0,3.5), th=rand(0,6.283), r=rand(.12,.3);
+    const v=c ? Math.sqrt(CONFIG.G*c.m*rho*rho/Math.pow(rho*rho+c.s2+.02,1.5)) : 0;
+    addAsteroid({x:cx+rho*Math.cos(th), y:rand(-.25,.25), z:cz+rho*Math.sin(th), vx:(c?c.vx:0)-Math.sin(th)*v, vz:(c?c.vz:0)+Math.cos(th)*v, r, m:r*r*r*.8});
+  }
+  return n;
+}
+function cometTail(b){                      // 혜성 꼬리: 가장 가까운 별의 반대쪽으로
+  let s=null, sd=Infinity;
+  for(const q of bodies){ if(q.alive&&q.kind==='planet'&&q.type==='star'){ const d=Math.hypot(q.x-b.x,q.z-b.z); if(d<sd){ sd=d; s=q; } } }
+  let dx,dz;
+  if(s){ dx=(b.x-s.x)/(sd||1); dz=(b.z-s.z)/(sd||1); }
+  else{ const v=Math.hypot(b.vx,b.vz)||1; dx=-b.vx/v; dz=-b.vz/v; }
+  if(!b.tint){ const c=new THREE.Color(pal(b).ui); b.tint=[c.r*.9,c.g*.9,c.b*.9]; }
+  spawnDust(b.x+rand(-.2,.2), b.y+rand(-.15,.15), b.z+rand(-.2,.2), b.vx*.55+dx*1.7+rand(-.25,.25), rand(-.12,.12), b.vz*.55+dz*1.7+rand(-.25,.25), rand(1.5,3.5), .1, b.tint);
+}
+function removeBody(b){
+  if(!b.alive) return;
+  b.alive=false;
+  if(b.mesh){
+    scene.remove(b.mesh);
+    if(b.kind==='planet') b.mesh.traverse(o=>{ if(o.geometry && !o.isSprite) o.geometry.dispose(); if(o.material) o.material.dispose(); });
+    else b.mesh.material.dispose();
+  }
+  if(b.arrow){ scene.remove(b.arrow); b.arrow.userData.shaft.geometry.dispose(); b.arrow.userData.head.geometry.dispose(); b.arrow.userData.mat.dispose(); }
+  if(b.trail){ scene.remove(b.trail); b.trail.geometry.dispose(); b.trail.material.dispose(); }
+  if(b.type==='galaxy' && b.kind==='planet') freeGalaxy(b);
+  if(b.jet){ disposeJet(b.jet); b.jet=null; }
+  if(state.selected===b) select(null);
+  state.previewDirty=true;
+}
+function syncSize(b){
+  if(b.kind==='planet') b.mesh.scale.setScalar(b.r);
+  else b.mesh.scale.copy(b.sh).multiplyScalar(b.r);
+}
+const fragCount = ()=>{ let n=0; for(const b of bodies) if(b.alive && b.kind==='frag') n++; return n; };
+const planets = ()=>bodies.filter(b=>b.alive && b.kind==='planet');
+
+/* ============================================================
+   은하의 별들 — 중심 주위를 도는 가벼운 입자. 다른 은하가 지나가면 꼬리처럼 끌려 나온다.
+   ============================================================ */
+const gs = {n:CONFIG.GALAXY_STARS*CONFIG.MAX_PLANETS};
+gs.pos=new Float32Array(gs.n*3); gs.vel=new Float32Array(gs.n*3); gs.col=new Float32Array(gs.n*3); gs.owner=new Int32Array(gs.n);
+(function(){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(gs.pos,3));
+  g.setAttribute('color', new THREE.BufferAttribute(gs.col,3));
+  gs.points=new THREE.Points(g, new THREE.PointsMaterial({size:.7, map:TEX_GLOW, vertexColors:true, transparent:true,
+    blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true}));
+  gs.points.frustumCulled=false; scene.add(gs.points);
+})();
+function seedGalaxy(b){
+  const P=pal(b), c1=new THREE.Color(P.a), c2=new THREE.Color(P.b), c=new THREE.Color(), D=KINDS.galaxy.disc, S=CONFIG.GS_SOFT;
+  let made=0;
+  for(let i=0;i<gs.n && made<CONFIG.GALAXY_STARS;i++){
+    if(gs.owner[i]) continue;
+    const rho=0.7+(D-0.7)*Math.pow(Math.random(),0.75);
+    let th = Math.random()<0.28 ? rand(0,6.283) : (Math.random()<.5?0:Math.PI)+2.3*Math.log(rho)+rand(-.4,.4);   // 나선팔 두 개
+    th*=b.spinDir;
+    const x=rho*Math.cos(th), z=rho*Math.sin(th), y=rand(-1,1)*0.3*Math.exp(-rho/3.5);
+    const v=Math.sqrt(CONFIG.G*b.m*rho*rho/Math.pow(rho*rho+S,1.5))*b.spinDir;
+    const k=i*3;
+    const vxl=-Math.sin(th)*v, vzl=Math.cos(th)*v;
+    if(b.face){            // 원반을 세워서(진행 방향을 마주 보게) 놓는다
+      gs.pos[k]=b.x+y; gs.pos[k+1]=x; gs.pos[k+2]=b.z+z;
+      gs.vel[k]=b.vx; gs.vel[k+1]=vxl; gs.vel[k+2]=b.vz+vzl;
+    }else{
+      gs.pos[k]=b.x+x; gs.pos[k+1]=y; gs.pos[k+2]=b.z+z;
+      gs.vel[k]=b.vx+vxl; gs.vel[k+1]=0; gs.vel[k+2]=b.vz+vzl;
+    }
+    c.copy(c1).lerp(c2, clamp(rho/D*1.15,0,1)); const br=rand(.55,1.25);
+    gs.col[k]=c.r*br; gs.col[k+1]=c.g*br; gs.col[k+2]=c.b*br;
+    gs.owner[i]=b.id; made++;
+  }
+}
+function freeGalaxy(b){
+  for(let i=0;i<gs.n;i++) if(gs.owner[i]===b.id){ gs.owner[i]=0; gs.col[i*3]=gs.col[i*3+1]=gs.col[i*3+2]=0; }
+}
+function clearGalaxies(){ gs.owner.fill(0); gs.col.fill(0); }
+function shiftGalaxy(b,dx,dz,dvx,dvz){        // 은하를 옮기거나 속도를 바꾸면 별들도 함께
+  for(let i=0;i<gs.n;i++){ if(gs.owner[i]!==b.id) continue; const k=i*3;
+    gs.pos[k]+=dx; gs.pos[k+2]+=dz; gs.vel[k]+=dvx; gs.vel[k+2]+=dvz; }
+}
+function rescaleGalaxy(b,f){                 // 중심 질량이나 중력이 바뀌면 도는 속도도 맞춤
+  for(let i=0;i<gs.n;i++){ if(gs.owner[i]!==b.id) continue; const k=i*3;
+    gs.vel[k]=b.vx+(gs.vel[k]-b.vx)*f; gs.vel[k+1]*=f; gs.vel[k+2]=b.vz+(gs.vel[k+2]-b.vz)*f; }
+}
+function stepGalaxies(dt){
+  const G=CONFIG.G, S=CONFIG.GS_SOFT, H=heavy.length;
+  for(let i=0;i<gs.n;i++){
+    if(!gs.owner[i]) continue;
+    const k=i*3, x=gs.pos[k], y=gs.pos[k+1], z=gs.pos[k+2];
+    let ax=0, ay=0, az=0;
+    for(let h=0;h<H;h++){
+      const b=heavy[h]; if(!b.alive) continue;
+      const dx=b.x-x, dy=b.y-y, dz=b.z-z, d2=dx*dx+dy*dy+dz*dz+S, inv=G*b.m/(d2*Math.sqrt(d2));
+      if(b.type==='hole' && d2-S<b.r*b.r){ gs.owner[i]=0; gs.col[k]=gs.col[k+1]=gs.col[k+2]=0; break; }   // 블랙홀에 빨려 들어감
+      ax+=dx*inv; ay+=dy*inv; az+=dz*inv;
+    }
+    if(!gs.owner[i]) continue;
+    gs.vel[k]+=ax*dt; gs.vel[k+1]+=ay*dt; gs.vel[k+2]+=az*dt;
+    gs.pos[k]=x+gs.vel[k]*dt; gs.pos[k+1]=y+gs.vel[k+1]*dt; gs.pos[k+2]=z+gs.vel[k+2]*dt;
+  }
+}
+function setVel(b,vx,vz){ if(b.type==='galaxy') shiftGalaxy(b,0,0,vx-b.vx,vz-b.vz); b.vx=vx; b.vz=vz; b.vy=0; state.previewDirty=true; }
+function setPos(b,x,z){ if(b.type==='galaxy') shiftGalaxy(b,x-b.x,z-b.z,0,0); b.x=x; b.z=z; state.previewDirty=true; }
+
+/* ============================================================
+   먼지·가스 입자
+   ============================================================ */
+const dust = {n:CONFIG.MAX_DUST, i:0};
+dust.pos=new Float32Array(dust.n*3); dust.vel=new Float32Array(dust.n*3); dust.col=new Float32Array(dust.n*3); dust.tint=new Float32Array(dust.n*3);
+dust.keep=new Float32Array(dust.n); dust.age=new Float32Array(dust.n); dust.life=new Float32Array(dust.n); dust.max=new Float32Array(dust.n); dust.heat=new Float32Array(dust.n);
+(function(){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(dust.pos,3));
+  g.setAttribute('color', new THREE.BufferAttribute(dust.col,3));
+  dust.points=new THREE.Points(g, new THREE.PointsMaterial({size:.58, map:TEX_GLOW, vertexColors:true, transparent:true,
+    blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true}));
+  dust.points.frustumCulled=false; scene.add(dust.points);
+})();
+const ROCK_TINT=[.38,.30,.26];
+function spawnDust(x,y,z,vx,vy,vz,life,heat,tint,keep){
+  const i=dust.i, k=i*3, t=tint||ROCK_TINT; dust.i=(dust.i+1)%dust.n;
+  dust.pos[k]=x; dust.pos[k+1]=y; dust.pos[k+2]=z;
+  dust.vel[k]=vx; dust.vel[k+1]=vy; dust.vel[k+2]=vz;
+  dust.tint[k]=t[0]; dust.tint[k+1]=t[1]; dust.tint[k+2]=t[2];
+  dust.life[i]=life; dust.max[i]=life; dust.age[i]=0; dust.heat[i]=heat; dust.keep[i]=keep||0;   // keep: 이 밝기 아래로는 식지 않음
+}
+function clearDust(){ dust.life.fill(0); dust.col.fill(0); dust.pos.fill(0); }
+function stepDust(dt){
+  const G=CONFIG.G;
+  for(const b of heavy) if(b.type==='hole') b.pend=0;
+  for(let i=0;i<dust.n;i++){
+    if(dust.life[i]<=0) continue;
+    dust.life[i]-=dt; dust.age[i]+=dt;
+    const k=i*3; let x=dust.pos[k], y=dust.pos[k+1], z=dust.pos[k+2];
+    let ax=0, ay=0, az=0, dead=dust.life[i]<=0, hole=null, hx=0, hy=0, hz=0, hd2=0;
+    for(let h=0;h<heavy.length && !dead;h++){
+      const b=heavy[h]; if(!b.alive) continue;
+      const dx=b.x-x, dy=b.y-y, dz=b.z-z, d2=dx*dx+dy*dy+dz*dz;
+      // 찢어진 천체의 조각(keep>0)은 거리와 상관없이 블랙홀에 붙잡힌다
+      if(b.type==='hole' && (d2<81 || dust.keep[i]>0) && (!hole || d2<hd2)){ hole=b; hx=dx; hy=dy; hz=dz; hd2=d2; }
+      if(b.type!=='galaxy' && d2<b.r*b.r*0.8 && dust.age[i]>0.5){ dead=true; if(b.type==='hole'){ b.fed=(b.fed||0)+1; b.jetHeat=Math.min(1,(b.jetHeat||0)+.03); if(dust.keep[i]>0) b.jetOn=true; } break; }
+      const inv=G*b.m/Math.pow(d2+0.15+b.s2,1.5);
+      ax+=dx*inv; ay+=dy*inv; az+=dz*inv;
+    }
+    if(dead){ dust.life[i]=0; continue; }
+    dust.vel[k]+=ax*dt; dust.vel[k+1]+=ay*dt; dust.vel[k+2]+=az*dt;
+    if(hole){               // 블랙홀 근처의 가스는 서로 비벼지며 납작한 원반으로 감기고, 뜨겁게 빛난다
+      const d=Math.sqrt(hd2)||1, ux=hx/d, uy=hy/d, uz=hz/d;
+      const wx=dust.vel[k]-hole.vx, wy=dust.vel[k+1]-hole.vy, wz=dust.vel[k+2]-hole.vz, wr=wx*ux+wy*uy+wz*uz;
+      const wide=dust.keep[i]>0;            // 찢어진 천체의 조각은 줄로 뭉치지 않고 넓게 퍼지게
+      if(wide){ dust.life[i]=dust.max[i]; hole.pend++; }     // 삼켜질 때까지 사라지지 않고 계속 빛난다
+      // 조각은 시간이 갈수록 더 빨리 속도를 잃어, 달아나지 못하고 모두 소용돌이치며 빨려 든다
+      const kr=Math.min(1,(wide?0.45:1.6)*dt), kt=wide ? Math.min(.9,0.035+0.007*dust.age[i])*dt : 0.05*dt, jit=wide&&hd2<144?5*dt:0;
+      dust.vel[k]  -= ux*wr*kr+(wx-ux*wr)*kt-(Math.random()*2-1)*jit;
+      dust.vel[k+1]-= uy*wr*kr+(wy-uy*wr)*kt+dust.vel[k+1]*Math.min(1,(wide?0.6:1.2)*dt)-(Math.random()*2-1)*jit*.35;
+      dust.vel[k+2]-= uz*wr*kr+(wz-uz*wr)*kt-(Math.random()*2-1)*jit;
+      const hot=.9*(1-d/9); if(dust.heat[i]<hot) dust.heat[i]=hot;
+      if(wide && d>9){ const kf=Math.min(1,0.35*dt); dust.vel[k]-=wx*kf; dust.vel[k+2]-=wz*kf; }   // 멀리 달아나던 조각을 붙잡음
+    }
+    dust.pos[k]=x+dust.vel[k]*dt; dust.pos[k+1]=y+dust.vel[k+1]*dt; dust.pos[k+2]=z+dust.vel[k+2]*dt;
+    dust.heat[i]*=Math.exp(-0.5*dt); if(dust.heat[i]<dust.keep[i]) dust.heat[i]=dust.keep[i];
+  }
+  // 제트는 조각이 빨려 들기 시작할 때 켜지고, 마지막 조각이 사라지면 꺼진다
+  for(const b of heavy) if(b.type==='hole'){ b.jetHeat=(b.jetHeat||0)*Math.exp(-0.8*dt); if(b.jetOn && !b.pend) b.jetOn=false; }
+}
+function paintDust(){
+  for(let i=0;i<dust.n;i++){
+    const k=i*3;
+    if(dust.life[i]<=0){ dust.col[k]=dust.col[k+1]=dust.col[k+2]=0; continue; }
+    const f=clamp(dust.life[i]/dust.max[i]*1.6,0,1), h=dust.heat[i];
+    const hr=clamp(h*1.8,0,1), hg=clamp((h-.25)*1.5,0,1), hb=clamp((h-.6)*2.2,0,1);
+    dust.col[k]  =f*(dust.tint[k]  +(1-dust.tint[k])  *hr);
+    dust.col[k+1]=f*(dust.tint[k+1]+(1-dust.tint[k+1])*hg);
+    dust.col[k+2]=f*(dust.tint[k+2]+(1-dust.tint[k+2])*hb);
+  }
+  dust.points.geometry.attributes.position.needsUpdate=true;
+  dust.points.geometry.attributes.color.needsUpdate=true;
+}
+
+/* ============================================================
+   효과: 섬광, 충격파, 화면 흔들림, 소리
+   ============================================================ */
+const effects=[];
+function addEffect(tex,x,y,z,s0,s1,dur,op,color){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, color:color||0xffc890, transparent:true, opacity:op, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:false}));
+  sp.position.set(x,y,z); sp.scale.setScalar(s0); sp.renderOrder=4; scene.add(sp);
+  effects.push({sp,t:0,dur,s0,s1,op});
+}
+const RIPPLE_GEO=new THREE.RingGeometry(.975,1,96);
+function addRipple(x,z,s1,dur,op,delay){     // 궤도 평면에 퍼지는 물결(중력파)
+  const m=new THREE.Mesh(RIPPLE_GEO, new THREE.MeshBasicMaterial({color:0x9fc4ff, transparent:true, opacity:op, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(x,.02,z); m.visible=false; scene.add(m);
+  effects.push({sp:m,t:-(delay||0),dur,s0:1.5,s1,op});
+}
+function boom(x,y,z,E){
+  const s=clamp(2.5+Math.sqrt(E)*1.5, 2.5, 46);
+  addEffect(TEX_GLOW,x,y,z,s*.5,s*2.2,.9,1);
+  addEffect(TEX_GLOW,x,y,z,s*.2,s*.9,.5,1,0xffffff);
+  addEffect(TEX_RING,x,y,z,s*.4,s*4.5,1.6,.75,0xffffff);
+  flashLight.position.set(x,y+1,z); flashLight.intensity=Math.max(flashLight.intensity, clamp(s*.5,2,14));
+  if(!reduceMotion) cam.shake=Math.max(cam.shake, clamp(s*.045,.1,1.3));
+  playBoom(s);
+}
+function clearEffects(){ effects.forEach(e=>{scene.remove(e.sp); e.sp.material.dispose();}); effects.length=0; flashLight.intensity=0; cam.shake=0; }
+
+/* ============================================================
+   물리: 중력 + 충돌
+   ============================================================ */
+function step(dt){
+  const n=bodies.length, G=CONFIG.G;
+  if(stepCount%8===0) heavy=bodies.filter(b=>b.alive).sort((a,b)=>b.m-a.m).slice(0,8);
+  for(let i=0;i<n;i++){ const b=bodies[i]; b.ax=b.ay=b.az=0; }
+  hits.length=0;
+  for(let i=0;i<n;i++){
+    const a=bodies[i];
+    for(let j=i+1;j<n;j++){
+      const b=bodies[j];
+      const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z, d2=dx*dx+dy*dy+dz*dz, e=d2+a.s2+b.s2;
+      const inv=G/(e*Math.sqrt(e));
+      const fa=inv*b.m, fb=inv*a.m;
+      a.ax+=dx*fa; a.ay+=dy*fa; a.az+=dz*fa;
+      b.ax-=dx*fb; b.ay-=dy*fb; b.az-=dz*fb;
+      const rr=a.r+b.r;
+      if(d2<rr*rr && a.type!=='galaxy' && b.type!=='galaxy') hits.push(a,b);   // 은하는 서로 통과한다
+    }
+  }
+  const cool=Math.exp(-CONFIG.HEAT_COOL*dt);
+  for(let i=0;i<n;i++){
+    const b=bodies[i];
+    b.vx+=b.ax*dt; b.vy+=b.ay*dt; b.vz+=b.az*dt;
+    b.x+=b.vx*dt; b.y+=b.vy*dt; b.z+=b.vz*dt;
+    b.heat*=cool; if(b.immune>0) b.immune-=dt;
+  }
+  for(let i=0;i<hits.length;i+=2) collide(hits[i],hits[i+1]);
+  if(stepCount%60===0){            // 너무 멀리 달아난 조각 정리
+    for(const b of bodies){
+      if(!b.alive||b.kind!=='frag') continue;
+      const dx=b.x-cam.target.x, dz=b.z-cam.target.z;
+      if(dx*dx+b.y*b.y+dz*dz>350*350) removeBody(b);
+    }
+  }
+  if(bodies.some(b=>!b.alive)) bodies=bodies.filter(b=>b.alive);
+  if(stepCount%2===0) for(const b of bodies){ if(b.alive && b.type==='comet' && b.kind==='planet') cometTail(b); }
+  if(stepCount%2===0) specialPairs(dt*2);
+  if(stepCount%6===0) watchMissions();
+  stepDust(dt); stepGalaxies(dt);
+  state.time+=dt; stepCount++;
+}
+
+function bounce(a,b,nx,ny,nz,d,vn){
+  const M=a.m+b.m;
+  if(vn<0){
+    const j=-(1+CONFIG.RESTITUTION)*vn/(1/a.m+1/b.m);
+    a.vx-=j/a.m*nx; a.vy-=j/a.m*ny; a.vz-=j/a.m*nz;
+    b.vx+=j/b.m*nx; b.vy+=j/b.m*ny; b.vz+=j/b.m*nz;
+  }
+  const ov=a.r+b.r-d;
+  if(ov>0){ const ta=b.m/M; a.x-=nx*ov*ta; a.y-=ny*ov*ta; a.z-=nz*ov*ta; b.x+=nx*ov*(1-ta); b.y+=ny*ov*(1-ta); b.z+=nz*ov*(1-ta); }
+}
+// 파편이 큰 천체에 떨어져 사라짐 (천체 크기는 그대로 — 합쳐져 커지는 모습은 만들지 않는다)
+function land(a,b,cx,cy,cz,nx,ny,nz,vrel){
+  const M=a.m+b.m;
+  a.vx=(a.vx*a.m+b.vx*b.m)/M; a.vy=(a.vy*a.m+b.vy*b.m)/M; a.vz=(a.vz*a.m+b.vz*b.m)/M; a.m=M;
+  if(vrel>0.5){
+    const nd=Math.min(14, 3+Math.round(b.r*40));
+    for(let i=0;i<nd;i++) spawnDust(cx,cy,cz, a.vx+nx*rand(.2,1.4)+rand(-1,1), a.vy+ny*rand(.2,1.4)+rand(-1,1), a.vz+nz*rand(.2,1.4)+rand(-1,1), rand(.6,1.8), .9);
+    if(b.r>0.2) addEffect(TEX_GLOW,cx,cy,cz,b.r*2,b.r*7,.5,.8);
+  }
+  a.heat=Math.min(1, a.heat+clamp(vrel*.05*Math.cbrt(b.m/a.m*50),0,.4));
+  removeBody(b);
+  if(a===state.selected) refreshSelection();
+}
+
+/* ---- 블랙홀·은하의 특별한 장면들 ---- */
+// 블랙홀·은하끼리, 블랙홀과 천체 사이의 특별한 상호작용
+function specialPairs(dt){
+  const ps=planets();
+  for(let i=0;i<ps.length;i++){
+    const a=ps[i];
+    if(a.alive && a.type==='hole' && (a.fed||0)>60 && state.time-(a.lastFlare||-9)>3) flare(a);
+    for(let j=i+1;j<ps.length;j++){
+      const b=ps[j]; if(!a.alive||!b.alive) continue;
+      const d=Math.hypot(b.x-a.x,b.z-a.z), M=a.m+b.m;
+      const drag=k=>{ const rx=b.vx-a.vx, rz=b.vz-a.vz; a.vx+=rx*k*b.m/M; a.vz+=rz*k*b.m/M; b.vx-=rx*k*a.m/M; b.vz-=rz*k*a.m/M; return Math.hypot(rx,rz); };
+      if(a.type==='galaxy' && b.type==='galaxy'){
+        // 가까이 지나가는 은하는 서로를 붙잡아 느려지고(역학적 마찰), 결국 하나가 된다
+        if(d<9){ const v=drag(Math.min(.5,0.11*(1-d/9)*dt)); if(d<1.4 && v<1.3) mergeGalaxies(a,b); }
+      }else if(a.type==='hole' && b.type==='hole'){
+        // 서로 도는 블랙홀은 중력파로 에너지를 잃고 점점 가까워진다
+        if(d<16){
+          drag(Math.min(.5, 0.028*(8/d)*(8/d)*dt));
+          a.gwT=(a.gwT||0)+dt;
+          if(a.gwT>clamp(d*0.09,.12,1.2)){ a.gwT=0; addRipple((a.x*a.m+b.x*b.m)/M,(a.z*a.m+b.z*b.m)/M, 36, 2.4, .28); }
+        }
+      }else if(a.type==='hole' || b.type==='hole'){
+        const hh=a.type==='hole'?a:b, p=hh===a?b:a;
+        if(p.type!=='galaxy' && d<1.3*p.r*Math.cbrt(hh.m/p.m)) tidal(hh,p);   // 조석 반지름 안으로 들어오면 찢어진다
+      }
+    }
+  }
+}
+// 조석 파괴: 천체가 가스 줄기로 풀려 블랙홀 주위에 감긴다
+function tidal(hh,p){
+  const c=new THREE.Color(pal(p).crust), tint=[c.r,c.g,c.b], hot=p.type==='star'?1:(p.type==='gas'?.5:.7);
+  const n=Math.round(clamp(p.r*p.r*(p.type==='star'?1800:1000),600,LOW?3200:9000));   // 조각 개수
+  const keep=p.type==='star'?.72:(p.type==='gas'?.45:.5);                            // 계속 밝게 빛나는 정도
+  for(let i=0;i<n;i++){
+    let ux,uy,uz; do{ ux=rand(-1,1); uy=rand(-1,1); uz=rand(-1,1); }while(ux*ux+uy*uy+uz*uz>1);
+    spawnDust(p.x+ux*p.r, uy*p.r*.6, p.z+uz*p.r, p.vx+rand(-.4,.4), rand(-.18,.18), p.vz+rand(-.4,.4), rand(14,30), hot, tint, keep);
+  }
+  addEffect(TEX_GLOW,p.x,p.y,p.z,p.r*2,p.r*5,.8,.9,c.getHex());
+  if(!reduceMotion) cam.shake=Math.max(cam.shake,.3);
+  playBoom(8);
+  say(p.type==='star' ? '블랙홀의 중력이 별을 국수처럼 길게 늘여 찢어 버렸어요. 과학자들은 이것을 조석 파괴라고 불러요.' : '블랙홀에 너무 가까이 간 천체가 길게 늘어나며 찢어졌어요.', 8000);
+  achieve('hole'); if(p.type==='star') achieve('tde');
+  removeBody(p);
+}
+// 물질이 많이 빨려 들 때 블랙홀이 번쩍인다 (빛줄기 자체는 아래 makeJet의 레이저로 그린다)
+function flare(hh){
+  hh.fed=0; hh.lastFlare=state.time;
+  addEffect(TEX_GLOW,hh.x,hh.y,hh.z,hh.r*3,hh.r*10,.9,.7,0xcfe0ff);
+  if(!hh.jetSaid){ hh.jetSaid=true; playBoom(10); setTimeout(()=>say('빨려 들어가는 가스가 뜨겁게 달아올라, 블랙홀 위아래로 회전하는 빛줄기(제트)를 뿜어요.', 8000), 2500); }
+}
+// 레이저처럼 곧게 뻗는 제트: 가운데 흰 심 + 푸른 겉빛 + 감겨 도는 나선 두 가닥. 살짝 기울어 빙글빙글 돈다.
+function makeJet(){
+  const g=new THREE.Group(), tilt=new THREE.Group(); tilt.rotation.z=0.13; g.add(tilt);
+  const L=26, mats=[];
+  const mat=(color,op)=>{ const m=new THREE.MeshBasicMaterial({color, transparent:true, opacity:op, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide}); m.userData.op=op; mats.push(m); return m; };
+  const mCore=mat(0xffffff,.95), mMid=mat(0x9fd0ff,.5), mOut=mat(0x5f8cff,.22);
+  const lm=new THREE.LineBasicMaterial({color:0xd8ecff, transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}); lm.userData.op=.9; mats.push(lm);
+  for(const s of [1,-1]){
+    const beam=new THREE.Group(); if(s<0) beam.rotation.x=Math.PI; tilt.add(beam);
+    const add=(r0,r1,m)=>{ const c=new THREE.Mesh(new THREE.CylinderGeometry(r1,r0,L,20,1,true), m); c.position.y=1.05+L/2; beam.add(c); };
+    add(.06,.1,mCore); add(.14,.3,mMid); add(.26,.62,mOut);
+    for(const ph of [0,Math.PI]){
+      const pts=[]; for(let i=0;i<=160;i++){ const t=i/160, a=ph+t*Math.PI*9, r=.16+.4*t; pts.push(new THREE.Vector3(Math.cos(a)*r, 1.05+t*L, Math.sin(a)*r)); }
+      beam.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lm));
+    }
+    const base=glowSprite(0xbfe0ff, 2.6, .9); base.position.y=1.2; beam.add(base); base.material.userData.op=.9; mats.push(base.material);
+  }
+  g.userData.mats=mats; g.visible=false; scene.add(g);
+  return g;
+}
+function disposeJet(g){ scene.remove(g); g.traverse(o=>{ if(o.geometry && !o.isSprite) o.geometry.dispose(); }); g.userData.mats.forEach(m=>m.dispose()); }
+function mergeGalaxies(a,b){
+  if(b.m>a.m){ const t=a; a=b; b=t; }
+  const M=a.m+b.m;
+  a.vx=(a.vx*a.m+b.vx*b.m)/M; a.vz=(a.vz*a.m+b.vz*b.m)/M; a.x=(a.x*a.m+b.x*b.m)/M; a.z=(a.z*a.m+b.z*b.m)/M; a.m=M;
+  for(let i=0;i<gs.n;i++) if(gs.owner[i]===b.id) gs.owner[i]=a.id;
+  removeBody(b);
+  const glow=a.mesh.children[0]; if(glow) glow.scale.multiplyScalar(1.3);
+  say('별끼리는 거의 부딪히지 않았지만, 두 원반은 흩어지고 둥근 은하 하나가 되었어요.', 9000);
+  if(a===state.selected) refreshSelection();
+}
+function mergeHoles(a,b){
+  if(b.m>a.m){ const t=a; a=b; b=t; }
+  const am=a.m, M=a.m+b.m, cx=(a.x*a.m+b.x*b.m)/M, cz=(a.z*a.m+b.z*b.m)/M;
+  a.vx=(a.vx*a.m+b.vx*b.m)/M; a.vz=(a.vz*a.m+b.vz*b.m)/M; a.x=cx; a.z=cz;
+  a.m=M*0.95;                               // 질량의 일부는 중력파 에너지로 빠져나간다
+  a.r=Math.min(2.6, a.r*M/am); a.pickR=a.r*1.8; syncSize(a);
+  removeBody(b);
+  addEffect(TEX_GLOW,cx,0,cz,3,30,1.0,1,0xdfe8ff);
+  for(let i=0;i<7;i++) addRipple(cx,cz, 70, 3.2, .55, i*.22);
+  flashLight.position.set(cx,2,cz); flashLight.intensity=12;
+  if(!reduceMotion) cam.shake=1.2;
+  playChirp(); setTimeout(()=>playBoom(14), 850);
+  say('블랙홀 두 개가 하나로 합쳐졌어요! 이때 시공간이 물결처럼 출렁이는데, 이것이 중력파예요.', 9000);
+  achieve('gw');
+  if(a===state.selected) refreshSelection();
+}
+
+// 블랙홀은 닿는 것을 모두 삼킨다
+function swallow(h,o){
+  const M=h.m+o.m;
+  h.vx=(h.vx*h.m+o.vx*o.m)/M; h.vy=(h.vy*h.m+o.vy*o.m)/M; h.vz=(h.vz*h.m+o.vz*o.m)/M; h.m=M;
+  if(o.kind==='planet'){
+    const c=new THREE.Color(pal(o).crust), tint=[c.r,c.g,c.b], n=LOW?70:150;
+    for(let i=0;i<n;i++){                   // 삼켜지기 전 주위를 도는 빛나는 가스
+      const th=rand(0,6.283), rho=h.r*rand(1.6,3.8), v=Math.sqrt(CONFIG.G*h.m/rho)*rand(.75,1);
+      spawnDust(h.x+rho*Math.cos(th), h.y+rand(-.2,.2), h.z+rho*Math.sin(th), h.vx-Math.sin(th)*v, 0, h.vz+Math.cos(th)*v, rand(3,8), .7, tint);
+    }
+    addEffect(TEX_RING,h.x,h.y,h.z,h.r*9,h.r*1.5,1.0,.8,0xc79bff);
+    if(!reduceMotion) cam.shake=Math.max(cam.shake,.35);
+    playBoom(6);
+    say('블랙홀이 '+pal(o).name+'까지 삼켰어요. 블랙홀에서는 빛도 빠져나오지 못해요.', 6000);
+    achieve('hole');
+  }
+  removeBody(o);
+  if(h===state.selected) refreshSelection();
+}
+
+function collide(a,b){
+  if(!a.alive||!b.alive) return;
+  if(a.type==='hole'||b.type==='hole'){
+    if(a.type==='hole' && b.type==='hole') mergeHoles(a,b);
+    else if(a.type==='hole') swallow(a,b); else swallow(b,a);
+    return;
+  }
+  if(a.group && a.group===b.group && (a.immune>0||b.immune>0)) return;
+  if(b.m>a.m){ const t=a; a=b; b=t; }            // a = 더 무거운 쪽
+  let nx=b.x-a.x, ny=b.y-a.y, nz=b.z-a.z;
+  const d=Math.sqrt(nx*nx+ny*ny+nz*nz)||1e-6; nx/=d; ny/=d; nz/=d;
+  const rvx=b.vx-a.vx, rvy=b.vy-a.vy, rvz=b.vz-a.vz;
+  const vn=rvx*nx+rvy*ny+rvz*nz;
+  if(vn>0) return;                                // 이미 멀어지는 중
+  const vrel=Math.sqrt(rvx*rvx+rvy*rvy+rvz*rvz);
+  const G=CONFIG.G, M=a.m+b.m, mu=a.m*b.m/M, ratio=b.m/a.m;
+  const vesc=Math.sqrt(2*G*M/(a.r+b.r));
+  const k=a.r/(a.r+b.r);
+  const cx=a.x+nx*d*k, cy=a.y+ny*d*k, cz=a.z+nz*d*k;      // 접촉 지점
+  const bpar=vrel>1e-6 ? Math.sqrt(Math.max(0,1-(vn/vrel)*(vn/vrel))) : 0;  // 0=정면, 1=스침
+  const E=0.5*mu*vrel*vrel, Eeff=E*(1-0.6*bpar*bpar);      // 스칠수록 전달되는 에너지가 줄어듦
+  const Qsa=CONFIG.SHATTER_K*G*a.m/a.r+CONFIG.STRENGTH, Qsb=CONFIG.SHATTER_K*G*b.m/b.r+CONFIG.STRENGTH;
+  let fa=clamp(Eeff/a.m/Qsa-0.06,0,1), fb=clamp(Eeff/b.m/Qsb-0.06,0,1);
+  if(fa>0.8) fa=1; if(fb>0.8) fb=1;
+  if(fa<0.03) fa=0; if(fb<0.03) fb=0;
+
+  // 1) 천체끼리 부딪힘 → 합쳐지지 않고 항상 부서진다. 작은 쪽은 완전히, 큰 쪽은 질량 비에 따라.
+  if(a.kind==='planet' && b.kind==='planet'){
+    fb=1;
+    fa = ratio>0.35 ? 1 : Math.max(fa, clamp(0.08+0.6*ratio,0,.8));
+    const ev=makeEvent(a,b,nx,ny,nz,cx,cy,cz,vrel,vesc,bpar);
+    const starry = a.type==='star'||b.type==='star';
+    recordImpact(cx,cy,cz,vrel,vesc,E);
+    boom(cx,cy,cz,Math.max(E, 0.3*mu*vesc*vesc)*(starry?4:1));
+    explain(a,b,vrel/vesc,fa);
+    achieve('first'); if(vrel/vesc>=2) achieve('smash'); if(a.type==='gas'||b.type==='gas') achieve('gas');
+    shatterBody(a,b,fa,ev,1); shatterBody(b,a,1,ev,-1);
+    if(a.alive){ a.group=ev.group; a.immune=CONFIG.IMMUNE; a.heat=Math.max(a.heat,clamp(vrel/vesc*.5,.3,1)); }
+    return;
+  }
+
+  // 2) 파편이 천체에 떨어짐
+  if(a.kind==='planet' && (ratio<0.02 || vrel<vesc*0.7 || fb===0)){ land(a,b,cx,cy,cz,nx,ny,nz,vrel); return; }
+
+  // 3) 파편끼리(또는 빠른 파편과 천체): 느리면 튕기고, 빠르면 더 잘게 부서진다
+  if(fa===0 && fb===0){
+    bounce(a,b,nx,ny,nz,d,vn);
+    const h=clamp(vrel*.08,0,.4); a.heat=Math.min(1,a.heat+h*ratio); b.heat=Math.min(1,b.heat+h);
+    return;
+  }
+  const ev=makeEvent(a,b,nx,ny,nz,cx,cy,cz,vrel,vesc,bpar);
+  if(a.kind==='planet') boom(cx,cy,cz,E);
+  else if(a.r>0.3) addEffect(TEX_GLOW,cx,cy,cz,a.r*2,a.r*6,.45,.7);
+  const hot=clamp(vrel/vesc*.45,.2,1);
+  if(fa>0) shatterBody(a,b,fa,ev,1);
+  if(fb>0) shatterBody(b,a,fb,ev,-1);
+  for(const x of [a,b]){ if(x.alive){ x.group=ev.group; x.immune=CONFIG.IMMUNE; x.heat=Math.max(x.heat,hot); } }
+  if(a.alive && b.alive) bounce(a,b,nx,ny,nz,d,vn);
+}
+function makeEvent(a,b,nx,ny,nz,cx,cy,cz,vrel,vesc,bpar){
+  const M=a.m+b.m;
+  let tx=(b.vx-a.vx), ty=(b.vy-a.vy), tz=(b.vz-a.vz);      // b가 a에 대해 접선 방향으로 흘러가는 방향
+  const vn=tx*nx+ty*ny+tz*nz; tx-=vn*nx; ty-=vn*ny; tz-=vn*nz;
+  const tl=Math.sqrt(tx*tx+ty*ty+tz*tz)||1; tx/=tl; ty/=tl; tz/=tl;
+  return {group:++groupSeq, nx,ny,nz, cx,cy,cz, vrel, vesc, bpar, tx,ty,tz,
+          vcx:(a.vx*a.m+b.vx*b.m)/M, vcy:(a.vy*a.m+b.vy*b.m)/M, vcz:(a.vz*a.m+b.vz*b.m)/M};
+}
+function recordImpact(x,y,z,v,vesc,E){      // 계기판에는 가장 큰 충돌을 남긴다
+  const li=state.lastImpact;
+  if(!li || E>=li.E*0.3) state.lastImpact={x,y,z,v,ratio:v/vesc,t:state.time,E:Math.max(E,li?li.E*0.999:0)};
+}
+function explain(a,b,q,fa){                  // 충돌 결과를 쉬운 말로
+  let t;
+  if(a.type==='star'||b.type==='star') t = (a.type==='star'&&b.type==='star') ? '별과 별이 부딪혔어요! 엄청난 빛과 뜨거운 가스가 사방으로 퍼져요.' : '별에 부딪힌 천체는 순식간에 부서지고, 별도 뜨거운 가스를 뿜어냈어요.';
+  else if(a.type==='gas'||b.type==='gas') t = '가스 행성은 단단한 땅이 없어서 구름처럼 흩어져요. 안쪽의 작은 핵만 조각으로 남아요.';
+  else if(a.type==='comet'||b.type==='comet') t = '혜성은 얼음과 먼지 덩어리라서 쉽게 부서져요.';
+  else if(q<1.3) t = '천천히 부딪혀서 큼직한 덩어리로 쪼개졌어요.';
+  else if(q<2.2) t = '꽤 빠르게 부딪혔어요! 수많은 조각으로 부서졌어요.';
+  else t = '엄청난 속도! 두 행성이 산산조각 났어요.';
+  if(fa<1 && a.type==='rock' && b.type==='rock') t = '작은 행성은 부서지고, 큰 행성은 한쪽이 떨어져 나갔어요. 달도 이렇게 생겼다고 해요.';
+  say(t, 6000);
+}
+
+// body의 f 비율만큼을 파편으로 만든다. sign=+1이면 접촉 방향이 +n, -1이면 -n
+function shatterBody(body, other, f, ev, sign){
+  const total=f>=1, R=body.r, M0=body.m, isP=body.kind==='planet', type=body.type;
+  const nx=ev.nx*sign, ny=ev.ny*sign, nz=ev.nz*sign;      // body → 상대 방향
+  const tx=ev.tx*-sign, ty=ev.ty*-sign, tz=ev.tz*-sign;   // body가 흘러가는 방향
+  const solid = isP ? (type==='gas' ? 0.2 : (type==='star' ? 0 : 1)) : 1;   // 단단한 조각이 되는 비율
+  const Mf=M0*f*0.92*solid;
+  const budget=CONFIG.MAX_FRAGMENTS-fragCount();
+  let n;
+  if(isP) n = solid>0 ? Math.round((14+126*clamp(M0*f/8,0,1))*(type==='gas'?0.22:1)) : 0;
+  else n = R<0.16 ? 0 : (R>0.3 ? 2+((Math.random()*3)|0) : 2);
+  n=Math.min(n, budget);
+  if(n<2) n=0;
+
+  // 파편의 기본 속도: 충돌 방향(법선) 속도는 대부분 잃고, 스치는 방향(접선) 속도는 간직한다.
+  let bvx,bvy,bvz;
+  {
+    const wx=body.vx-ev.vcx, wy=body.vy-ev.vcy, wz=body.vz-ev.vcz, wn=wx*nx+wy*ny+wz*nz;
+    const keepN= total ? 0.15+0.35*(1-ev.bpar) : 0.7, keepT= total ? Math.min(1,0.5+0.42*ev.bpar) : 0.7;
+    bvx=ev.vcx+(wx-wn*nx)*keepT+wn*nx*keepN; bvy=ev.vcy+(wy-wn*ny)*keepT+wn*ny*keepN; bvz=ev.vcz+(wz-wn*nz)*keepT+wn*nz*keepN;
+  }
+  const cap=1-2*Math.min(f*1.6,0.95);
+  const heatScale=clamp(ev.vrel/ev.vesc*0.5,.3,1);
+  const vsp = isP ? Math.max(ev.vrel, 0.8*ev.vesc) : ev.vrel;   // 느리게 닿아도 조각은 충분히 흩어지게
+
+  function sample(){             // 부서져 나갈 영역 안의 임의 지점 (단위 구 좌표)
+    for(let t=0;t<40;t++){
+      const ux=rand(-1,1), uy=rand(-1,1), uz=rand(-1,1), l=Math.sqrt(ux*ux+uy*uy+uz*uz);
+      if(l>1||l<1e-3) continue;
+      if(total) return [ux,uy,uz,l];
+      if(l<0.4) continue;
+      if((ux*nx+uy*ny+uz*nz)/l>cap) return [ux,uy,uz,l];
+    }
+    const jx=nx+rand(-.3,.3), jy=ny+rand(-.3,.3), jz=nz+rand(-.3,.3), jl=Math.sqrt(jx*jx+jy*jy+jz*jz);
+    const s=rand(.6,.95); return [jx/jl*s, jy/jl*s, jz/jl*s, s];
+  }
+  function fling(u, fast){       // 위치·속도 계산
+    const px=body.x+u[0]*R*.92, py=body.y+u[1]*R*.92, pz=body.z+u[2]*R*.92;
+    let wx=px-ev.cx, wy=py-ev.cy, wz=pz-ev.cz;
+    const wn=wx*nx+wy*ny+wz*nz; wx-=wn*nx; wy-=wn*ny; wz-=wn*nz;
+    let wl=Math.sqrt(wx*wx+wy*wy+wz*wz);
+    if(wl<1e-3){ wx=rand(-1,1); wy=rand(-1,1); wz=rand(-1,1); const q=wx*nx+wy*ny+wz*nz; wx-=q*nx; wy-=q*ny; wz-=q*nz; wl=Math.sqrt(wx*wx+wy*wy+wz*wz)||1; }
+    wx/=wl; wy/=wl; wz/=wl;
+    let dx,dy,dz,sp;
+    if(total){
+      dx=u[0]/u[3]*.7+wx*.6-nx*.15+tx*ev.bpar*.5+rand(-.35,.35);
+      dy=u[1]/u[3]*.7+wy*.6-ny*.15+ty*ev.bpar*.5+rand(-.35,.35);
+      dz=u[2]/u[3]*.7+wz*.6-nz*.15+tz*ev.bpar*.5+rand(-.35,.35);
+      const q=Math.random(); sp=vsp*(isP ? 0.22+0.7*q*q : 0.08+0.5*q*q)*(0.5+0.5*u[3]);
+    }else{
+      dx=wx-nx*.35+tx*ev.bpar*.9+rand(-.4,.4);
+      dy=wy-ny*.35+ty*ev.bpar*.9+rand(-.4,.4);
+      dz=wz-nz*.35+tz*ev.bpar*.9+rand(-.4,.4);
+      sp=vsp*rand(.25,.75);
+    }
+    const dl=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
+    sp*=fast;
+    const dc=Math.sqrt((px-ev.cx)*(px-ev.cx)+(py-ev.cy)*(py-ev.cy)+(pz-ev.cz)*(pz-ev.cz));
+    return {x:px,y:py,z:pz, vx:bvx+dx/dl*sp, vy:bvy+dy/dl*sp*.7, vz:bvz+dz/dl*sp,
+            heat:clamp(1.15-dc/(R*1.6),0,1)*heatScale, depth:u[3]};
+  }
+
+  if(n>0){
+    // 크기 분포: 큰 덩어리 몇 개 + 중간 조각 + 작은 부스러기
+    const w=[]; let sum=0;
+    const nb=isP ? Math.max(1,Math.round(n*.05)) : 0, nm=isP ? Math.round(n*.3) : 0;
+    for(let i=0;i<n;i++){
+      const v = !isP ? rand(.5,1.5) : (i<nb ? rand(6,14) : (i<nb+nm ? rand(.8,2.4) : rand(.05,.35)));
+      w.push(v); sum+=v;
+    }
+    for(let i=0;i<n;i++){
+      const m=Mf*w[i]/sum, r=Math.max(CONFIG.MIN_FRAG_R, R*Math.cbrt(m/M0)*(type==='gas'&&isP?0.6:1));
+      const s=fling(sample(), 1);
+      const core = isP ? (type==='gas' ? true : s.depth<0.55) : !!body.core;
+      addFragment({type, x:s.x,y:s.y,z:s.z, vx:s.vx,vy:s.vy,vz:s.vz, m, r, pal:body.pal, core,
+                   heat:Math.min(1,s.heat+(core?.25:0)), group:ev.group, immune:CONFIG.IMMUNE});
+    }
+  }
+  // 먼지 · 가스 구름 · 별의 플라스마
+  const puff = isP && type==='gas' ? 2.6 : (isP && type==='star' ? 3 : 1);
+  const nd=Math.round(clamp((30+230*f)*(R/2)*(isP?1:.5)*puff, 4, (LOW?260:520)*(puff>1?1.8:1)));
+  let tint=null;
+  if(puff>1){ const c=new THREE.Color(pal(body).crust); tint=[Math.min(1,c.r*1.15),Math.min(1,c.g*1.15),Math.min(1,c.b*1.15)]; }
+  for(let i=0;i<nd;i++){
+    const s=fling(sample(), rand(.8,2.2));
+    if(type==='star'&&isP) spawnDust(s.x,s.y,s.z,s.vx,s.vy,s.vz, rand(5,14), 1, tint);
+    else if(puff>1) spawnDust(s.x,s.y,s.z,s.vx,s.vy,s.vz, rand(6,16), Math.min(.6,s.heat), tint);
+    else spawnDust(s.x,s.y,s.z,s.vx,s.vy,s.vz, rand(2.5,9), Math.min(1,s.heat+.3));
+  }
+
+  if(total) removeBody(body);
+  else{
+    body.m=M0*(1-f); body.r=R*Math.cbrt(1-f); syncSize(body);
+    if(body===state.selected) refreshSelection();
+  }
+}
+
+/* ============================================================
+   예상 궤적 (멈춰 있을 때 점선으로)
+   ============================================================ */
+const hitMark=new THREE.Mesh(new THREE.RingGeometry(.55,.75,40), new THREE.MeshBasicMaterial({color:0xffb454, transparent:true, opacity:.95, side:THREE.DoubleSide, depthTest:false}));
+hitMark.rotation.x=-Math.PI/2; hitMark.renderOrder=5; hitMark.visible=false; scene.add(hitMark);
+function computePreview(){
+  state.previewDirty=false;
+  const ps=planets();
+  const S=ps.map(b=>({x:b.x,y:b.y,z:b.z,vx:b.vx,vy:b.vy,vz:b.vz,m:b.m,r:b.r,s2:b.s2,gal:b.type==='galaxy'}));
+  const N=CONFIG.PREVIEW_STEPS, dt=CONFIG.PREVIEW_DT, G=CONFIG.G;
+  let count=0, hit=null;
+  for(let k=0;k<N;k++){
+    for(let i=0;i<S.length;i++){
+      const a=ps[i].trail.geometry.attributes.position.array;
+      a[k*3]=S[i].x; a[k*3+1]=S[i].y; a[k*3+2]=S[i].z;
+    }
+    count=k+1;
+    if(hit) break;
+    for(let i=0;i<S.length;i++){
+      let ax=0,ay=0,az=0;
+      for(let j=0;j<S.length;j++){ if(i===j) continue;
+        const dx=S[j].x-S[i].x, dy=S[j].y-S[i].y, dz=S[j].z-S[i].z, d2=dx*dx+dy*dy+dz*dz+S[i].s2+S[j].s2;
+        const inv=G*S[j].m/(d2*Math.sqrt(d2)); ax+=dx*inv; ay+=dy*inv; az+=dz*inv;
+      }
+      S[i].vx+=ax*dt; S[i].vy+=ay*dt; S[i].vz+=az*dt;
+    }
+    for(let i=0;i<S.length;i++){ S[i].x+=S[i].vx*dt; S[i].y+=S[i].vy*dt; S[i].z+=S[i].vz*dt; }
+    for(let i=0;i<S.length && !hit;i++) for(let j=i+1;j<S.length;j++){
+      if(S[i].gal||S[j].gal) continue;
+      const dx=S[j].x-S[i].x, dy=S[j].y-S[i].y, dz=S[j].z-S[i].z, rr=S[i].r+S[j].r;
+      if(dx*dx+dy*dy+dz*dz<rr*rr){ const t=S[i].r/rr; hit={x:S[i].x+dx*t,y:S[i].y+dy*t,z:S[i].z+dz*t}; break; }
+    }
+  }
+  for(const b of ps){
+    b.trail.geometry.setDrawRange(0,count);
+    b.trail.geometry.attributes.position.needsUpdate=true;
+    b.trail.computeLineDistances();
+  }
+  if(hit){ hitMark.position.set(hit.x,hit.y,hit.z); hitMark.userData.on=true; } else hitMark.userData.on=false;
+}
+
+/* ============================================================
+   장면 구성 / 초기화
+   ============================================================ */
+function loadSetup(list, camBase, theta){
+  for(const b of bodies.slice()) removeBody(b);
+  bodies=[]; clearDust(); clearEffects(); clearGalaxies();
+  rebuildRockPool();
+  state.time=0; state.lastImpact=null; state.running=false; state.launched=false; acc=0; stepCount=0; heavy=[];
+  list.forEach(s=>{ if(s.type==='ast') addAsteroid(s); else addPlanet(s); });
+  state.setup=list.map(s=>Object.assign({},s));
+  if(camBase){ state.camBase=camBase; state.camTheta=theta||Math.PI/2; }
+  cam.theta=state.camTheta||Math.PI/2; cam.phi=0.92;
+  cam.target.set(0,0,0);
+  { const asp=(canvas.clientWidth||innerWidth)/(canvas.clientHeight||innerHeight); cam.dist = asp<1 ? clamp(state.camBase*0.85/asp,state.camBase,150) : state.camBase; }   // 세로 화면이면 더 멀리서
+  select(planets()[0]||null);
+  state.previewDirty=true;
+  syncUI();
+}
+function snapshot(){
+  return planets().map(b=>({type:b.type,x:b.x,z:b.z,vx:b.vx,vz:b.vz,r:b.r,m:b.m,pal:b.pal,face:b.face}))
+    .concat(bodies.filter(b=>b.alive&&b.belt).map(b=>({type:'ast',x:b.x,y:b.y,z:b.z,vx:b.vx,vz:b.vz,r:b.r,m:b.m})));
+}
+function setGravity(g){
+  const f=Math.sqrt(g/CONFIG.G);
+  CONFIG.G=g;
+  for(const b of planets()) if(b.type==='galaxy') rescaleGalaxy(b,f);
+  state.previewDirty=true;
+}
+
+/* ============================================================
+   조작: 천체 끌기(방향 지시·이동), 시점 회전, 확대
+   ============================================================ */
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+function setRay(px,py){
+  const r=canvas.getBoundingClientRect();
+  ndc.set((px-r.left)/r.width*2-1, -((py-r.top)/r.height*2-1));
+  ray.setFromCamera(ndc,camera);
+}
+function pickPlanet(px,py){
+  setRay(px,py);
+  const o=ray.ray.origin, d=ray.ray.direction; let best=null, bt=Infinity;
+  for(const b of bodies){
+    if(!b.alive||b.kind!=='planet') continue;
+    const ox=b.x-o.x, oy=b.y-o.y, oz=b.z-o.z, tc=ox*d.x+oy*d.y+oz*d.z;
+    if(tc<0) continue;
+    const d2=ox*ox+oy*oy+oz*oz-tc*tc, R=Math.max((b.pickR||b.r)*1.12, tc*(LOW?0.035:0.02));
+    if(d2<R*R && tc<bt){ bt=tc; best=b; }
+  }
+  return best;
+}
+function groundPoint(px,py,y){
+  setRay(px,py);
+  const o=ray.ray.origin, d=ray.ray.direction;
+  if(Math.abs(d.y)<1e-4) return null;
+  const t=(y-o.y)/d.y; if(t<=0) return null;
+  return {x:o.x+d.x*t, z:o.z+d.z*t};
+}
+function aimAt(b,px,py){
+  const g=groundPoint(px,py,b.y); if(!g) return;
+  const dx=g.x-b.x, dz=g.z-b.z, L=Math.hypot(dx,dz);
+  const s=Math.min(CONFIG.MAX_SPEED, Math.max(0,L-b.r)/CONFIG.ARROW_LEN);
+  if(L>1e-6) setVel(b,dx/L*s,dz/L*s);
+  if(!state.aimed && s>0){ state.aimed=true; hush(); }
+}
+function moveTo(b,x,z){
+  for(const o of bodies){
+    if(o===b||!o.alive||o.kind!=='planet'||o.type==='galaxy'||b.type==='galaxy') continue;
+    let dx=x-o.x, dz=z-o.z, d=Math.hypot(dx,dz), min=b.r+o.r+0.15;
+    if(d<min){ if(d<1e-4){dx=1;dz=0;d=1;} x=o.x+dx/d*min; z=o.z+dz/d*min; }
+  }
+  setPos(b,x,z);
+}
+const ptrs=new Map(); let action=null;
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){ const [p,q]=[...ptrs.values()]; action={type:'pinch', d0:Math.hypot(p.x-q.x,p.y-q.y)||1, dist0:cam.dist}; return; }
+  if(ptrs.size>2) return;
+  const hit=pickPlanet(e.clientX,e.clientY);
+  if(hit){
+    select(hit);
+    if(!state.running){
+      let m=state.mode; if(e.shiftKey||e.button===2) m = m==='aim' ? 'move' : 'aim';
+      if(m==='aim'){ action={type:'aim',body:hit}; aimAt(hit,e.clientX,e.clientY); }
+      else{ const g=groundPoint(e.clientX,e.clientY,hit.y); action={type:'move',body:hit,ox:g?g.x-hit.x:0,oz:g?g.z-hit.z:0}; }
+      canvas.classList.add('grabbing');
+      return;
+    }
+  }
+  action={type:'orbit',x:e.clientX,y:e.clientY}; canvas.classList.add('grabbing');
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(!action) return;
+  if(action.type==='pinch'){
+    if(ptrs.size<2) return;
+    const [p,q]=[...ptrs.values()]; const d=Math.hypot(p.x-q.x,p.y-q.y)||1;
+    cam.dist=clamp(action.dist0*action.d0/d,6,260);
+  }else if(action.type==='orbit'){
+    cam.theta+=(e.clientX-action.x)*0.006; cam.phi=clamp(cam.phi-(e.clientY-action.y)*0.006,0.1,1.5);
+    action.x=e.clientX; action.y=e.clientY;
+  }else if(action.type==='aim'){
+    if(action.body.alive) aimAt(action.body,e.clientX,e.clientY);
+  }else if(action.type==='move'){
+    const g=groundPoint(e.clientX,e.clientY,action.body.y);
+    if(g && action.body.alive) moveTo(action.body,g.x-action.ox,g.z-action.oz);
+  }
+});
+function endPtr(e){
+  ptrs.delete(e.pointerId);
+  if(action && action.type==='pinch' && ptrs.size<2) action=null;
+  else if(ptrs.size===0) action=null;
+  if(!action) canvas.classList.remove('grabbing');
+}
+canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); cam.dist=clamp(cam.dist*Math.exp(e.deltaY*0.0012),6,260); },{passive:false});
+
+/* ============================================================
+   패널
+   ============================================================ */
+const ui={run:$('btnRun'), reset:$('btnReset'), aim:$('modeAim'), move:$('modeMove'), del:$('btnDel'), stop:$('btnStop'),
+  size:$('rngSize'), mass:$('rngMass'), outSize:$('outSize'), outMass:$('outMass'), selBox:$('selBox'), selEmpty:$('selEmpty'),
+  selDot:$('selDot'), selText:$('selText'), lblSize:$('lblSize'), follow:$('btnFollow'), sound:$('btnSound'), hint:$('hint'), panel:$('panel'), toggle:$('toggle'),
+  hTime:$('hTime'), hSpeed:$('hSpeed'), hFrag:$('hFrag'), addBtns:[...document.querySelectorAll('[data-add]')]};
+
+function select(b){ state.selected=b; refreshSelection(); }
+function refreshSelection(){
+  const b=state.selected;
+  if(!b||!b.alive){ ui.selBox.hidden=true; ui.selEmpty.hidden=false; return; }
+  ui.selBox.hidden=false; ui.selEmpty.hidden=true;
+  ui.selDot.style.background=pal(b).ui; ui.selText.textContent=pal(b).name+' · '+KINDS[b.type].label;
+  ui.lblSize.style.display = (b.type==='galaxy'||b.type==='hole') ? 'none' : '';
+  ui.size.value=clamp(b.r,0.6,4.5); ui.mass.value=clamp(b.m,0.5,120);
+  ui.outSize.textContent=b.r.toFixed(1); ui.outMass.textContent=b.m.toFixed(1);
+}
+function syncUI(){
+  ui.run.textContent = state.running ? '일시정지 ⏸' : (state.launched ? '계속 ▶' : '발사 ▶');
+  ui.aim.setAttribute('aria-pressed', state.mode==='aim'); ui.move.setAttribute('aria-pressed', state.mode==='move');
+  ui.follow.setAttribute('aria-pressed', state.follow); ui.sound.setAttribute('aria-pressed', state.sound);
+  const full=planets().length>=CONFIG.MAX_PLANETS;
+  ui.addBtns.forEach(x=>x.disabled=full);
+  ui.hint.textContent = state.running
+    ? '빈 곳을 끌면 시점 회전 · 휠이나 두 손가락으로 확대 · 일시정지하면 방향을 다시 지시할 수 있습니다'
+    : (state.mode==='aim'
+        ? '천체에서 끌어 화살표로 방향과 속도를 지시하세요 (길수록 빠름) · 빈 곳을 끌면 시점 회전'
+        : '천체를 끌어 위치를 옮기세요 · 빈 곳을 끌면 시점 회전');
+}
+function toggleRun(){
+  ensureAudio();
+  if(!state.running){
+    if(!state.launched){ state.setup=snapshot(); state.launched=true; }
+    state.running=true; hush();
+  }else{ state.running=false; state.previewDirty=true; }
+  syncUI();
+}
+ui.run.onclick=toggleRun;
+ui.reset.onclick=()=>{ hush(); loadSetup(state.setup); };
+ui.aim.onclick=()=>{state.mode='aim'; syncUI();};
+ui.move.onclick=()=>{state.mode='move'; syncUI();};
+ui.follow.onclick=()=>{state.follow=!state.follow; syncUI();};
+ui.sound.onclick=()=>{state.sound=!state.sound; if(state.sound) ensureAudio(); syncUI();};
+$('btnZoomIn').onclick=()=>{cam.dist=clamp(cam.dist*.8,6,260);};
+$('btnZoomOut').onclick=()=>{cam.dist=clamp(cam.dist*1.25,6,260);};
+ui.toggle.onclick=()=>{ const c=ui.panel.classList.toggle('collapsed'); ui.toggle.setAttribute('aria-expanded', !c); ui.toggle.textContent=c?'설정':'접기'; };
+function chipRow(id, key, fn){
+  $(id).addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    for(const x of $(id).children) x.setAttribute('aria-pressed', x===b);
+    fn(+b.dataset[key]);
+  });
+}
+chipRow('speedRow','s',v=>{state.speed=v;});
+chipRow('gravRow','g',setGravity);
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{
+  ensureAudio();
+  const p=buildPreset(b.dataset.preset);
+  loadSetup(p.list, p.cam||36, p.theta); state.aimed=true;
+  if(p.belt){ addBelt(planets()[0]); state.setup=snapshot(); }
+  if(b.dataset.preset==='galaxy') say('은하는 별 사이가 아주 멀어서, 부딪혀도 서로 통과해요. 대신 중력이 별들을 긴 꼬리처럼 끌어내요.', 9000);
+  else if(b.dataset.preset==='solar') say('행성들이 별 주위를 돌고 있어요. 일시정지하고 행성의 방향을 바꿔 보세요.', 8000);
+  else if(b.dataset.preset==='tde') say('별이 블랙홀 옆을 스쳐 지나가요. 너무 가까워지면 어떻게 되는지 지켜보세요.', 8000);
+  else if(b.dataset.preset==='ring') say('두 은하가 원반을 마주 보고 정면으로 통과해요. 지나간 뒤 원반에 고리가 퍼지는지 보세요.', 9000);
+  else if(b.dataset.preset==='bh2') say('블랙홀 두 개가 서로 돌아요. 점점 가까워지며 물결(중력파)이 퍼져요. 소리도 들어 보세요.', 9000);
+  else if(b.dataset.preset==='hole') say('블랙홀 주위를 도는 천체들이에요. 너무 느리게 도는 천체는 빨려 들어가요.', 8000);
+  else hush();
+});
+$('btnBelt').onclick=()=>{
+  const ps=planets(), c=(state.selected&&state.selected.alive) ? state.selected : ps.slice().sort((a,b)=>b.m-a.m)[0];
+  if(addBelt(c)<=0) say('파편이 너무 많아서 소행성대를 더 놓을 수 없어요.', 4000);
+  else say((c?pal(c).name+' 주위에 ':'')+'소행성대를 놓았어요. 발사하면 돌기 시작해요.', 4000);
+};
+$('btnClearStamps').onclick=()=>{ done.clear(); try{ localStorage.removeItem('planetsim.missions'); }catch(e){} renderMissions(); };
+ui.size.oninput=()=>{
+  const b=state.selected; if(!b||b.type==='galaxy'||b.type==='hole') return;
+  const dens=b.m/(b.r*b.r*b.r); b.r=+ui.size.value; b.m=clamp(dens*b.r*b.r*b.r,0.5,120);   // 밀도 유지
+  syncSize(b); refreshSelection(); state.previewDirty=true;
+};
+ui.mass.oninput=()=>{
+  const b=state.selected; if(!b) return;
+  const m=+ui.mass.value; if(b.type==='galaxy') rescaleGalaxy(b,Math.sqrt(m/b.m));
+  b.m=m; refreshSelection(); state.previewDirty=true;
+};
+ui.stop.onclick=()=>{ const b=state.selected; if(b) setVel(b,0,0); };
+ui.del.onclick=()=>{ const b=state.selected; if(!b) return; removeBody(b); bodies=bodies.filter(x=>x.alive); syncUI(); };
+ui.addBtns.forEach(btn=>btn.onclick=()=>{
+  const ps=planets(); if(ps.length>=CONFIG.MAX_PLANETS) return;
+  const type=btn.dataset.add, K=KINDS[type];
+  const used=new Set(ps.filter(b=>b.type===type).map(b=>b.pal)); let p=0; while(used.has(p)&&p<K.pals.length-1) p++;
+  const r=K.r, gap=type==='galaxy'?K.disc:r; let x=0,z=0;
+  for(let k=0;k<80;k++){
+    const ang=k*2.4, rad=(type==='galaxy'?10:(type==='hole'?14:5))+k*0.6; x=cam.target.x+Math.cos(ang)*rad; z=cam.target.z+Math.sin(ang)*rad;
+    if(ps.every(o=>Math.hypot(o.x-x,o.z-z)>(o.type==='galaxy'?KINDS.galaxy.disc:o.r)+gap+1)) break;
+  }
+  select(addPlanet({type,x,z,vx:0,vz:0,r,m:K.m||K.dens*r*r*r,pal:p})); syncUI();
+  if(type==='galaxy') cam.dist=Math.max(cam.dist,60);
+});
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT') return;
+  if(e.code==='Space'){ e.preventDefault(); toggleRun(); }
+  if(e.code==='Delete' && state.selected) ui.del.onclick();
+});
+
+/* ============================================================
+   화면 갱신
+   ============================================================ */
+const selRing=new THREE.Mesh(new THREE.RingGeometry(1.22,1.3,72), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.75, side:THREE.DoubleSide, depthTest:false}));
+selRing.rotation.x=-Math.PI/2; selRing.renderOrder=5; scene.add(selRing);
+const qTmp=new THREE.Quaternion();
+function resize(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  if(canvas.width!==Math.floor(w*renderer.getPixelRatio())||canvas.height!==Math.floor(h*renderer.getPixelRatio())){
+    renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+  }
+}
+let hudTick=0;
+function draw(real){
+  resize();
+  const paused=!state.running, simDt=state.running ? real*state.speed : 0;
+  let mx=0,my=0,mz=0,mm=0;
+  for(const b of bodies){
+    if(!b.alive) continue;
+    b.mesh.position.set(b.x,b.y,b.z);
+    if(simDt>0 && b.ax3){ qTmp.setFromAxisAngle(b.ax3, b.spin*simDt); b.mesh.quaternion.premultiply(qTmp); }
+    const e=b.mesh.material.emissive;
+    if(e){ const h=b.heat, s=b.kind==='planet' ? .75 : 1;
+      e.setRGB(s*clamp(h*2.0,0,1), s*clamp((h-.3)*1.1,0,.8), s*clamp((h-.75)*1.6,0,.4)); }
+    mx+=b.x*b.m; my+=b.y*b.m; mz+=b.z*b.m; mm+=b.m;
+    if(b.type==='hole' && b.kind==='planet'){          // 제트(레이저) 켜고 끄기, 회전
+      const target = b.jetOn ? 1 : clamp((b.jetHeat||0)*1.4,0,1);
+      b.jetLv=(b.jetLv||0)+(target-(b.jetLv||0))*(1-Math.exp(-2.5*real));
+      if(b.jetLv>0.02){
+        if(!b.jet) b.jet=makeJet();
+        const jg=b.jet; jg.visible=true; jg.position.set(b.x,b.y,b.z); jg.scale.set(b.r,b.r*b.jetLv,b.r);
+        if(!reduceMotion) jg.rotation.y+=real*4.2;
+        const fl=.85+.15*Math.sin(performance.now()/60);
+        for(const m of jg.userData.mats) m.opacity=m.userData.op*Math.min(1,b.jetLv*1.3)*fl;
+      }else if(b.jet) b.jet.visible=false;
+    }
+    if(b.kind==='planet'){
+      const sp=Math.hypot(b.vx,b.vz), L=sp*CONFIG.ARROW_LEN;
+      if(paused && L>0.15){
+        b.arrow.visible=true; b.arrow.position.set(b.x,b.y,b.z); b.arrow.rotation.y=Math.atan2(-b.vz,b.vx);
+        const hl=Math.min(.75,L*.6), sl=Math.max(.01,L-hl), u=b.arrow.userData;
+        u.shaft.scale.y=sl; u.shaft.position.x=b.r+sl/2;
+        u.head.scale.setScalar(hl/.75); u.head.position.x=b.r+sl+hl/2;
+      }else b.arrow.visible=false;
+      b.trail.visible=paused;
+    }
+  }
+  if(paused && state.previewDirty) computePreview();
+  hitMark.visible=paused && !!hitMark.userData.on;
+  grid.visible=paused;
+  const sb=state.selected;
+  if(sb && sb.alive && paused){ selRing.visible=true; selRing.position.set(sb.x,sb.y,sb.z); selRing.scale.setScalar(sb.pickR||sb.r); } else selRing.visible=false;
+
+  for(let i=effects.length-1;i>=0;i--){
+    const f=effects[i]; f.t+=real*(state.running?Math.max(.5,state.speed):1);
+    const k=f.t/f.dur;
+    if(k<0){ f.sp.visible=false; continue; }
+    f.sp.visible=true;
+    if(k>=1){ scene.remove(f.sp); f.sp.material.dispose(); effects.splice(i,1); continue; }
+    f.sp.scale.setScalar(f.s0+(f.s1-f.s0)*(1-(1-k)*(1-k))); f.sp.material.opacity=f.op*(1-k)*(1-k);
+  }
+  flashLight.intensity*=Math.exp(-3.5*real);
+  if(!reduceMotion){ const tt=performance.now()/1000; for(const s of bgTwinkle) s.m.opacity=.78+.22*Math.sin(tt*s.w+s.p); }
+  paintDust();
+  gs.points.geometry.attributes.position.needsUpdate=true;
+  gs.points.geometry.attributes.color.needsUpdate=true;
+
+  // 카메라
+  if(state.follow && state.running && mm>0){
+    const k=1-Math.exp(-2.5*real);
+    cam.target.x+=(mx/mm-cam.target.x)*k; cam.target.y+=(my/mm-cam.target.y)*k; cam.target.z+=(mz/mm-cam.target.z)*k;
+  }
+  cam.shake*=Math.exp(-5*real);
+  const sp=Math.sin(cam.phi), sh=cam.shake;
+  camera.position.set(cam.target.x+cam.dist*sp*Math.cos(cam.theta)+rand(-sh,sh),
+                      cam.target.y+cam.dist*Math.cos(cam.phi)+rand(-sh,sh),
+                      cam.target.z+cam.dist*sp*Math.sin(cam.theta)+rand(-sh,sh));
+  camera.lookAt(cam.target);
+
+  if(hudTick++%6===0){
+    ui.hTime.textContent=state.time.toFixed(1)+'초';
+    const li=state.lastImpact;
+    ui.hSpeed.textContent = li ? li.v.toFixed(1)+' (탈출속도의 '+li.ratio.toFixed(1)+'배)' : '-';
+    const fc=fragCount(); ui.hFrag.textContent=fc+'개';
+    if(fc>=FRAG_GOAL && state.running) achieve('frag');
+    const full=planets().length>=CONFIG.MAX_PLANETS;
+    ui.addBtns.forEach(x=>{ if(x.disabled!==full) x.disabled=full; });
+  }
+  renderer.render(scene,camera);
+}
+let last=performance.now();
+function frame(now){
+  const real=Math.min((now-last)/1000, 1/20); last=now;
+  if(state.running){
+    acc+=real*state.speed; let n=0;
+    while(acc>=CONFIG.DT && n<CONFIG.MAX_STEPS_PER_FRAME){ step(CONFIG.DT); acc-=CONFIG.DT; n++; }
+    if(n===CONFIG.MAX_STEPS_PER_FRAME) acc=0;
+  }
+  draw(real);
+  requestAnimationFrame(frame);
+}
+
+renderMissions();
+loadSetup(buildPreset('start').list, 36);
+window.__sim={state, step, CONFIG, get bodies(){return bodies;}, loadSetup, buildPreset, toggleRun, gs, addBelt, done, planets, dust};
+requestAnimationFrame(frame);
+})();
+</script>
+<script>
+// 설치형 앱(PWA): 오프라인에서도 열리도록 파일을 기기에 저장한다
+if('serviceWorker' in navigator && location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1'){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>
