@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="행성·별·은하·블랙홀을 직접 움직여 충돌시키는 3D 우주 시뮬레이션">
 <meta name="theme-color" content="#05070d">
 <link rel="manifest" href="manifest.webmanifest">
@@ -31,12 +31,12 @@
   --font-body:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;background:var(--space)}
 body{background:var(--space);color:var(--ink);font-family:var(--font-body);font-size:14px;overflow:hidden;-webkit-user-select:none;user-select:none}
 canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 canvas#c.grabbing{cursor:grabbing}
 
-#hud{position:fixed;top:12px;left:16px;right:16px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;z-index:2}
+#hud{position:fixed;top:max(12px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;z-index:2}
 #hud h1{font-family:var(--font-display);font-size:15px;font-weight:400;letter-spacing:.04em;margin:0 8px 0 0;align-self:center;color:var(--ink)}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-variant-numeric:tabular-nums;color:var(--ink-dim);white-space:nowrap}
 .chip b{color:var(--ink);font-weight:500}
@@ -63,6 +63,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 #selBox{display:flex;flex-direction:column;gap:8px}
 #selBox[hidden],#selEmpty[hidden]{display:none}
 #toggle{display:none}
+#btnFull{pointer-events:auto;flex:none;min-height:0;padding:5px 12px;border-radius:999px;background:var(--panel);color:var(--ink)}
 #missions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .mission{display:flex;gap:8px;align-items:center;text-align:left;width:100%;padding:5px 10px;min-height:32px;color:var(--ink-dim)}
 .mission .mk{color:var(--ink-dim);flex:none}
@@ -84,6 +85,18 @@ input[type=range]{width:100%;accent-color:var(--accent)}
   #toggle{display:block;flex:0 0 auto}
   #hint{bottom:auto;top:84px;font-size:11.5px}
 }
+/* 휴대폰 가로 화면(높이가 낮음): 패널을 오른쪽에 작게 접어 두고 "설정"으로 펼친다 */
+@media (max-height:520px) and (min-width:721px){
+  #hud h1{display:none}
+  #hud{top:max(8px,env(safe-area-inset-top))}
+  #panel{top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));width:236px;max-height:calc(100% - 16px);padding:8px;gap:8px}
+  #panel.collapsed section.more{display:none}
+  #panel.collapsed{background:rgba(14,19,32,.6)}
+  #toggle{display:block;flex:0 0 auto}
+  button{min-height:32px;padding:6px 8px}
+  #hint{font-size:11.5px;bottom:max(6px,env(safe-area-inset-bottom))}
+  #toast{top:16%;font-size:13.5px}
+}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
 </style>
 </head>
@@ -95,6 +108,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
   <div class="chip">경과 <b id="hTime">0.0초</b></div>
   <div class="chip hot">충돌 속도 <b id="hSpeed">-</b></div>
   <div class="chip">파편 <b id="hFrag">0개</b></div>
+  <button id="btnFull" type="button">전체화면</button>
 </div>
 
 <aside id="panel" class="collapsed" aria-label="조작 패널">
@@ -1459,6 +1473,21 @@ ui.addBtns.forEach(btn=>btn.onclick=()=>{
   select(addPlanet({type,x,z,vx:0,vz:0,r,m:K.m||K.dens*r*r*r,pal:p})); syncUI();
   if(type==='galaxy') cam.dist=Math.max(cam.dist,60);
 });
+// 전체화면: 주소창과 시스템 버튼을 숨기고 화면 가득 보여 준다
+(function(){
+  const bf=$('btnFull'), de=document.documentElement;
+  const req=de.requestFullscreen||de.webkitRequestFullscreen, exit=document.exitFullscreen||document.webkitExitFullscreen;
+  const isFs=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
+  if(!req || matchMedia('(display-mode: fullscreen)').matches){ bf.style.display='none'; return; }
+  bf.onclick=()=>{
+    try{
+      if(isFs()) exit.call(document);
+      else{ const r=req.call(de,{navigationUI:'hide'}); if(r&&r.catch) r.catch(()=>say('이 브라우저에서는 전체화면을 쓸 수 없어요. 앱으로 설치하면 전체화면으로 열려요.',6000)); }
+    }catch(e){}
+  };
+  const upd=()=>{ bf.textContent=isFs()?'전체화면 끄기':'전체화면'; };
+  document.addEventListener('fullscreenchange',upd); document.addEventListener('webkitfullscreenchange',upd);
+})();
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT') return;
   if(e.code==='Space'){ e.preventDefault(); toggleRun(); }
